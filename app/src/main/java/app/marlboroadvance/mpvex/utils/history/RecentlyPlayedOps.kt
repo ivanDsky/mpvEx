@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.net.Uri
 import app.marlboroadvance.mpvex.database.entities.RecentlyPlayedEntity
 import app.marlboroadvance.mpvex.domain.recentlyplayed.repository.RecentlyPlayedRepository
+import app.marlboroadvance.mpvex.domain.network.NetworkRecent
 import app.marlboroadvance.mpvex.preferences.AdvancedPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -33,6 +34,23 @@ object RecentlyPlayedOps {
     if (!preferences.enableRecentlyPlayed.get()) return
 
     val uri = Uri.parse(filePath)
+
+    // Stable network-history identities are always recorded (they resolve
+    // back to a connection + file path on replay).
+    if (uri.scheme.equals(NetworkRecent.SCHEME, ignoreCase = true)) {
+      repository.addRecentlyPlayed(
+        filePath,
+        fileName,
+        videoTitle,
+        duration,
+        fileSize,
+        width,
+        height,
+        launchSource,
+        playlistId,
+      )
+      return
+    }
 
     if (uri.scheme in listOf("smb", "ftp", "ftps", "webdav", "webdavs")) return
     if (uri.host?.lowercase() in listOf("127.0.0.1", "localhost", "0.0.0.0")) return

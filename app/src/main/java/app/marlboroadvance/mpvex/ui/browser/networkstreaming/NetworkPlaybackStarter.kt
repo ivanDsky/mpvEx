@@ -6,6 +6,7 @@ import android.net.Uri
 import app.marlboroadvance.mpvex.domain.network.NetworkConnection
 import app.marlboroadvance.mpvex.domain.network.NetworkFile
 import app.marlboroadvance.mpvex.domain.network.NetworkFolderQueue
+import app.marlboroadvance.mpvex.domain.network.NetworkRecent
 import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
 import app.marlboroadvance.mpvex.repository.NetworkRepository
 import app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy
@@ -70,8 +71,8 @@ class NetworkPlaybackStarter(
         intent.putExtra("title", file.name)
         intent.putExtra("filename", file.name)
         // Pass the original network file path for stable media identifier (position saving)
-        intent.putExtra("network_file_path", file.path)
-        intent.putExtra("network_connection_id", connectionId)
+        intent.putExtra(NetworkRecent.EXTRA_NETWORK_FILE_PATH, file.path)
+        intent.putExtra(NetworkRecent.EXTRA_NETWORK_CONNECTION_ID, connectionId)
         if (queue.isNotEmpty()) {
           intent.putParcelableArrayListExtra("playlist", ArrayList(queue))
           intent.putExtra("playlist_index", queueIndex)

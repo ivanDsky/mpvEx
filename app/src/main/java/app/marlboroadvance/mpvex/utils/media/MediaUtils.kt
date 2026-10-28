@@ -46,7 +46,7 @@ import java.io.File
  * bypassing MediaUtils.
  */
 object MediaUtils : KoinComponent {
-  private val playbackStarter: app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkPlaybackStarter by inject()
+  private val playbackStarter: NetworkPlaybackStarter by inject()
 
   /**
    * Play video content from any source.
@@ -67,13 +67,7 @@ object MediaUtils : KoinComponent {
     val uri =
       when (source) {
         is Video -> {
-          // Network history entries: resolve the stable identity back to a
-          // live proxy stream and launch with the folder queue.
-          val networkRecent = NetworkRecent.parse(source.uri.toString())
-          if (networkRecent != null) {
-            playNetworkRecent(context, networkRecent)
-            return
-          }
+          networkRecentEntry(source)?.let { playNetworkRecent(context, it); return }
           val intent = Intent(Intent.ACTION_VIEW, source.uri)
           intent.setClass(context, PlayerActivity::class.java)
           intent.putExtra("internal_launch", true) // Enables subtitle autoload
@@ -93,11 +87,7 @@ object MediaUtils : KoinComponent {
           if (source.isBlank()) return
           // Network history entries: resolve the stable identity back to a
           // live proxy stream and launch with the folder queue.
-          val networkRecent = NetworkRecent.parse(source)
-          if (networkRecent != null) {
-            playNetworkRecent(context, networkRecent)
-            return
-          }
+          networkRecentEntry(source)?.let { playNetworkRecent(context, it); return }
           // Handle file paths with # characters properly
           if (source.startsWith("/") || source.startsWith("file://")) {
             // It's a local file path - create URI safely
@@ -140,6 +130,14 @@ object MediaUtils : KoinComponent {
   /**
    * @deprecated Use RecentlyPlayedOps.getLastPlayed() directly
    */
+  /** History identity for a recently-played network file, if [source] is one. */
+  private fun networkRecentEntry(source: Any): NetworkRecent.Ref? =
+    when (source) {
+      is Video -> NetworkRecent.parse(source.uri.toString())
+      is String -> NetworkRecent.parse(source)
+      else -> null
+    }
+
   @Deprecated(
     message = "Use RecentlyPlayedOps.getLastPlayed() directly",
     replaceWith =
@@ -150,7 +148,7 @@ object MediaUtils : KoinComponent {
   )
   private fun playNetworkRecent(
     context: Context,
-    recent: app.marlboroadvance.mpvex.domain.network.NetworkRecent.Ref,
+    recent: NetworkRecent.Ref,
   ) {
     CoroutineScope(Dispatchers.Main).launch {
       playbackStarter
@@ -165,7 +163,7 @@ object MediaUtils : KoinComponent {
         )
         .onFailure { e ->
           Log.e("MediaUtils", "Failed to resume network file: ${recent.path}", e)
-          android.widget.Toast
+          Toast
             .makeText(context, "Playback failed: ${e.message}", Toast.LENGTH_LONG)
             .show()
         }

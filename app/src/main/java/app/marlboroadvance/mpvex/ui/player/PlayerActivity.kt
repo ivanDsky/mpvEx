@@ -1769,8 +1769,8 @@ class PlayerActivity :
     if (subtitlesPreferences.autoloadMatchingSubtitles.get()) {
       lifecycleScope.launch {
         // For network files played via proxy (SMB/WebDAV/FTP), use the original network file path
-        val networkFilePath = intent.getStringExtra("network_file_path")
-        val networkConnectionId = intent.getLongExtra("network_connection_id", -1L)
+        val networkFilePath = intent.getStringExtra(NetworkRecent.EXTRA_NETWORK_FILE_PATH)
+        val networkConnectionId = intent.getLongExtra(NetworkRecent.EXTRA_NETWORK_CONNECTION_ID, -1L)
 
         if (networkFilePath != null && networkConnectionId != -1L) {
           // Pass network file path and connection ID for subtitle discovery
@@ -1881,20 +1881,20 @@ class PlayerActivity :
               NetworkRecent.recentPath(networkConnectionId, networkFilePath)
             } else {
               when (uri.scheme) {
-            "file" -> uri.path ?: uri.toString()
-            "content" -> {
-              contentResolver.query(
-                uri,
-                arrayOf(MediaStore.MediaColumns.DATA),
-                null,
-                null,
-                null,
-              )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                  val columnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                  if (columnIndex != -1) cursor.getString(columnIndex) else null
-                } else null
-              } ?: uri.toString()
+              "file" -> uri.path ?: uri.toString()
+              "content" -> {
+                contentResolver.query(
+                  uri,
+                  arrayOf(MediaStore.MediaColumns.DATA),
+                  null,
+                  null,
+                  null,
+                )?.use { cursor ->
+                  if (cursor.moveToFirst()) {
+                    val columnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    if (columnIndex != -1) cursor.getString(columnIndex) else null
+                  } else null
+                } ?: uri.toString()
             }
 
             else -> uri.toString()
@@ -2212,8 +2212,8 @@ class PlayerActivity :
           NetworkRecent.recentPath(networkConnectionId, networkFilePath)
         } else {
           when (uri.scheme) {
-            "file" -> {
-              uri.path ?: uri.toString()
+              "file" -> {
+                uri.path ?: uri.toString()
             }
 
           "content" -> {
@@ -3396,8 +3396,8 @@ class PlayerActivity :
   private fun getMediaIdentifier(intent: Intent, fileName: String): String {
     // Check if this is a network file played via proxy (SMB/WebDAV/FTP)
     // Use the stable network file path instead of the temporary proxy URL
-    val networkFilePath = intent.getStringExtra("network_file_path")
-    val networkConnectionId = intent.getLongExtra("network_connection_id", -1L)
+    val networkFilePath = intent.getStringExtra(NetworkRecent.EXTRA_NETWORK_FILE_PATH)
+    val networkConnectionId = intent.getLongExtra(NetworkRecent.EXTRA_NETWORK_CONNECTION_ID, -1L)
 
     if (networkFilePath != null && networkConnectionId != -1L) {
       // For network files via proxy: use connection ID + file path for stable identifier
