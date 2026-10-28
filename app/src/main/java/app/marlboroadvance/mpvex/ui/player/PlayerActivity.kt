@@ -226,6 +226,11 @@ class PlayerActivity :
   private var noisyReceiverRegistered = false
   private var mpvInitialized = false // Track MPV initialization state
   private var savePlaybackStateJob: kotlinx.coroutines.Job? = null // Track ongoing save job
+
+  // Identity of the network file currently loaded — updated as the playlist
+  // advances, so history/progress/subtitles track the RIGHT episode.
+  private var currentNetworkConnectionId: Long = -1L
+  private var currentNetworkFilePath: String? = null
   private var wasPlayingBeforePause = false // Track if video was playing before pause
 
   // ==================== Background Playback ====================
@@ -1768,9 +1773,10 @@ class PlayerActivity :
 
     if (subtitlesPreferences.autoloadMatchingSubtitles.get()) {
       lifecycleScope.launch {
-        // For network files played via proxy (SMB/WebDAV/FTP), use the original network file path
-        val networkFilePath = intent.getStringExtra(NetworkRecent.EXTRA_NETWORK_FILE_PATH)
-        val networkConnectionId = intent.getLongExtra(NetworkRecent.EXTRA_NETWORK_CONNECTION_ID, -1L)
+        // For network files played via proxy (SMB/WebDAV/FTP), use the original
+        // network file path of the episode actually playing.
+        val networkFilePath = currentNetworkFilePath
+        val networkConnectionId = currentNetworkConnectionId
 
         if (networkFilePath != null && networkConnectionId != -1L) {
           // Pass network file path and connection ID for subtitle discovery
@@ -2202,10 +2208,11 @@ class PlayerActivity :
         return@runCatching
       }
 
-      // Network files played via the proxy: store a stable identity instead
-      // of the ephemeral proxy URL, so history and replay survive restarts.
-      val networkFilePath = intent.getStringExtra(NetworkRecent.EXTRA_NETWORK_FILE_PATH)
-      val networkConnectionId = intent.getLongExtra(NetworkRecent.EXTRA_NETWORK_CONNECTION_ID, -1L)
+      // Network files played via the proxy: store a stable identity for the
+      // episode ACTUALLY playing (folder queues advance it), so history and
+      // replay survive restarts.
+      val networkFilePath = currentNetworkFilePath
+      val networkConnectionId = currentNetworkConnectionId
 
       val filePath =
         if (networkFilePath != null && networkConnectionId != -1L) {
@@ -3076,6 +3083,13 @@ class PlayerActivity :
     // Generate new media identifier for playback state
     mediaIdentifier = getMediaIdentifierFromUri(uri, fileName)
 
+    // Track the current network identity so history, progress and subtitles
+    // follow the playlist item actually playing (not the launch intent's).
+    NetworkRecent.parse(uri.toString())?.let { ref ->
+      currentNetworkConnectionId = ref.connectionId
+      currentNetworkFilePath = ref.path
+    }
+
     // Set HTTP headers (including referer) for network streams
     setHttpHeadersForUri(uri)
 
@@ -3395,11 +3409,20 @@ class PlayerActivity :
    */
   private fun getMediaIdentifier(intent: Intent, fileName: String): String {
     // Check if this is a network file played via proxy (SMB/WebDAV/FTP)
-    // Use the stable network file path instead of the temporary proxy URL
-    val networkFilePath = intent.getStringExtra(NetworkRecent.EXTRA_NETWORK_FILE_PATH)
-    val networkConnectionId = intent.getLongExtra(NetworkRecent.EXTRA_NETWORK_CONNECTION_ID, -1L)
+    // Use the currently-loaded item's identity: folder queues advance it
+    // past the launch intent's file.
+    val networkFilePath = currentNetworkFilePath
+      ?: intent.getStringExtra(NetworkRecent.EXTRA_NETWORK_FILE_PATH)
+    val networkConnectionId =
+      if (currentNetworkFilePath != null && currentNetworkConnectionId != -1L) {
+        currentNetworkConnectionId
+      } else {
+        intent.getLongExtra(NetworkRecent.EXTRA_NETWORK_CONNECTION_ID, -1L)
+      }
 
     if (networkFilePath != null && networkConnectionId != -1L) {
+      currentNetworkConnectionId = networkConnectionId
+      currentNetworkFilePath = networkFilePath
       // For network files via proxy: use connection ID + file path for stable identifier
       val identifier = NetworkRecent.playbackKey(networkConnectionId, networkFilePath)
       Log.d(
@@ -3446,6 +3469,8 @@ class PlayerActivity :
         app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy.getInstance().getStreamInfo(it)
       }
       if (info != null) {
+        currentNetworkConnectionId = info.connection.id
+        currentNetworkFilePath = info.filePath
         return NetworkRecent.playbackKey(info.connection.id, info.filePath)
       }
     }

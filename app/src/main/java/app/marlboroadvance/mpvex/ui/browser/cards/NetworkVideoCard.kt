@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.marlboroadvance.mpvex.preferences.AppearancePreferences
@@ -101,6 +102,7 @@ fun NetworkVideoCard(
           Image(
             bitmap = thumbnail.asImageBitmap(),
             contentDescription = file.name,
+            contentScale = ContentScale.Crop,
             modifier = Modifier.size(thumbSizeDp),
           )
         } else {

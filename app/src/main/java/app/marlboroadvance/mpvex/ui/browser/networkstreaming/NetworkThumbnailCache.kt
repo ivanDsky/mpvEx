@@ -36,10 +36,11 @@ class NetworkThumbnailCache private constructor(
     file: NetworkFile,
   ): Bitmap? = memoryCache.get(memoryKey(connectionId, file)) ?: loadFromDisk(connectionId, file)
 
-  /** Cached frame, or extract one through the streaming proxy. */
+  /** Cached frame, or extract one through the streaming proxy at [positionSec]. */
   suspend fun getOrLoad(
     connection: NetworkConnection,
     file: NetworkFile,
+    positionSec: Double = PREFERRED_POSITION_SECONDS,
   ): Bitmap? =
     withContext(Dispatchers.IO) {
       cached(connection.id, file)?.let { return@withContext it }
@@ -52,7 +53,7 @@ class NetworkThumbnailCache private constructor(
           runCatching {
             FastThumbnails.generateAsync(
               stream.url,
-              PREFERRED_POSITION_SECONDS,
+              positionSec,
               DIMENSION,
               useHwDec = false,
             )

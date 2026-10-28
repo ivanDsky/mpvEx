@@ -85,6 +85,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
@@ -1280,13 +1281,20 @@ private fun PinnedNetworkFoldersSection(
           ),
         ) {
           Column(modifier = Modifier.padding(12.dp)) {
-            Box(modifier = Modifier.size(32.dp)) {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp),
+            ) {
               val currentBitmap = pinProgress?.thumbnail
               if (currentBitmap != null) {
                 Image(
                   bitmap = currentBitmap.asImageBitmap(),
                   contentDescription = null,
-                  modifier = Modifier.size(32.dp),
+                  contentScale = ContentScale.Crop,
+                  modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(8.dp)),
                 )
               } else {
                 Icon(
@@ -1307,6 +1315,8 @@ private fun PinnedNetworkFoldersSection(
                     text = "${pinProgress.currentIndex}/${pinProgress.totalCount}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onPrimary,
+                    maxLines = 1,
+                    softWrap = false,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                   )
                 }

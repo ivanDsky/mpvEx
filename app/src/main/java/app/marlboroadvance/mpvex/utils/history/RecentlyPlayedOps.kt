@@ -95,6 +95,12 @@ object RecentlyPlayedOps {
       val recent = kotlin.runCatching { repository.getRecentlyPlayed(limit = 50) }.getOrDefault(emptyList())
       for (entity in recent) {
         val path = entity.filePath
+        val uri = runCatching { Uri.parse(path) }.getOrNull()
+        // Dead proxy URLs from old builds can never replay — drop them.
+        if (uri?.host in listOf("127.0.0.1", "localhost", "0.0.0.0")) {
+          runCatching { repository.deleteByFilePath(path) }
+          continue
+        }
         if (isNonFileUri(path)) {
           return@withContext path
         }
@@ -113,6 +119,11 @@ object RecentlyPlayedOps {
       val recent = kotlin.runCatching { repository.getRecentlyPlayed(limit = 50) }.getOrDefault(emptyList())
       for (entity in recent) {
         val path = entity.filePath
+        val uri = runCatching { Uri.parse(path) }.getOrNull()
+        if (uri?.host in listOf("127.0.0.1", "localhost", "0.0.0.0")) {
+          runCatching { repository.deleteByFilePath(path) }
+          continue
+        }
         if (isNonFileUri(path)) {
           return@withContext entity
         }

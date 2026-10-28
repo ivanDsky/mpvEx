@@ -229,10 +229,19 @@ class FolderListViewModel(
 
     val recentNames = folderScopedRecentNames(folder)
     val index = NetworkFolderQueue.resumeIndex(videos, recentNames)
+    val positionSec =
+      playbackStateRepository
+        .getVideoDataByTitle(
+          app.marlboroadvance.mpvex.domain.network.NetworkRecent
+            .playbackKey(folder.connectionId, videos[index].path),
+        )
+        ?.lastPosition
+        ?.takeIf { it > 0 }
+        ?.toDouble() ?: 2.0
     val thumbnail =
       app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
         .get(getApplication(), playbackStarter)
-        .getOrLoad(connection, videos[index])
+        .getOrLoad(connection, videos[index], positionSec)
     return PinProgress(currentIndex = index + 1, totalCount = videos.size, thumbnail = thumbnail)
   }
 
