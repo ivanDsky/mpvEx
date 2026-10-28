@@ -2003,7 +2003,13 @@ class PlayerActivity :
    *               Essential during onPause when finishing so the state is written before MainActivity resumes.
    */
   private fun saveVideoPlaybackState(mediaTitle: String, isSync: Boolean = false) {
-    if (mediaIdentifier.isBlank()) return
+    // Capture the identifier now: this save is written to the database
+    // asynchronously, and a playlist switch mutates mediaIdentifier to the NEXT
+    // video right after launching it. Reading the field inside saveBlock could
+    // store the old video's position under the new video's key, making the next
+    // video resume at the previous video's timestamp.
+    val identifier = mediaIdentifier
+    if (identifier.isBlank()) return
 
     // Cancel any previous pending save operation
     savePlaybackStateJob?.cancel()
@@ -2030,8 +2036,8 @@ class PlayerActivity :
 
     val saveBlock: suspend () -> Unit = {
       runCatching {
-        val oldState = playbackStateRepository.getVideoDataByTitle(mediaIdentifier)
-        Log.d(TAG, "Saving playback state for: $mediaTitle (identifier: $mediaIdentifier)")
+        val oldState = playbackStateRepository.getVideoDataByTitle(identifier)
+        Log.d(TAG, "Saving playback state for: $mediaTitle (identifier: $identifier)")
 
         val duration = if (currentDuration > 0) {
           currentDuration
@@ -2062,7 +2068,7 @@ class PlayerActivity :
 
         playbackStateRepository.upsert(
           PlaybackStateEntity(
-            mediaTitle = mediaIdentifier,
+            mediaTitle = identifier,
             lastPosition = lastPosition,
             playbackSpeed = speed,
             videoZoom = videoZoom,
