@@ -2,87 +2,159 @@ package app.marlboroadvance.mpvex.domain.network
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import app.marlboroadvance.mpvex.repository.NetworkRepository
+import app.marlboroadvance.mpvex.utils.sort.SortUtils
 import org.junit.Test
 
 /**
- * Folder queue plan for network playback: videos only, natural name order,
- * current file located in the queue; null when there is nothing to queue.
+ * Network browser listing order and queue plans: directories first, most
+ * recently modified first within each group, natural-name tie-break; the
+ * continue plan follows the folder's watch frontier.
  */
 class NetworkFolderQueueTest {
-  private fun entry(
+  private fun file(
     name: String,
     isDirectory: Boolean = false,
-    mime: String? = "video/mp4",
-  ) = NetworkFile(name = name, path = "Show/$name", size = 1, isDirectory = isDirectory, mimeType = mime)
+    lastModified: Long = 0,
+  ) = NetworkFile(name = name, path = name, size = 1, isDirectory = isDirectory, lastModified = lastModified)
+
+  private fun episode(name: String) =
+    NetworkFile(name = name, path = "Show/$name", size = 1, isDirectory = false, mimeType = "video/mp4")
+
+  private fun watched(name: String, finished: Boolean) =
+    app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity(
+      mediaTitle = "network_1_${"Show/$name".hashCode()}",
+      lastPosition = if (finished) 1800 else 600,
+      playbackSpeed = 1.0,
+      sid = 0,
+      subDelay = 0,
+      subSpeed = 1.0,
+      aid = 0,
+      audioDelay = 0,
+      timeRemaining = if (finished) 0 else 1200,
+      hasBeenWatched = true,
+    )
+
+  // ---- ordering (sortNetworkFiles) ----
 
   @Test
-  fun `plan orders video siblings in natural name order with the current file indexed`() {
+  fun `directories sort before files`() {
     val listing =
       listOf(
-        entry("Episode 10"),
-        entry("Episode 2"),
-        entry("cover.jpg", mime = "image/jpeg"),
-        entry("Extras", isDirectory = true),
+        file("video.mp4", isDirectory = false, lastModified = 300),
+        file("Shows", isDirectory = true, lastModified = 100),
       )
 
-    val plan = NetworkFolderQueue.plan(listing, currentPath = "Show/Episode 2")!!
+    val sorted = SortUtils.sortNetworkFiles(listing)
 
-    assertEquals(listOf("Episode 2", "Episode 10"), plan.siblings.map { it.name })
-    assertEquals(0, plan.currentIndex)
+    assertEquals(listOf("Shows", "video.mp4"), sorted.map { it.name })
   }
 
   @Test
-  fun `videos are detected by extension like local folders, even without a mime type`() {
+  fun `within a group more recently modified entries come first`() {
     val listing =
       listOf(
-        entry("Episode 1.rmvb", mime = null),
-        entry("Episode 2.vob", mime = null),
-        entry("cover.jpg", mime = null),
+        file("Old", isDirectory = true, lastModified = 100),
+        file("New", isDirectory = true, lastModified = 200),
+        file("old.mp4", isDirectory = false, lastModified = 10),
+        file("new.mp4", isDirectory = false, lastModified = 20),
       )
 
-    val plan = NetworkFolderQueue.plan(listing, currentPath = "Show/Episode 1.rmvb")!!
+    val sorted = SortUtils.sortNetworkFiles(listing)
 
-    assertEquals(listOf("Episode 1.rmvb", "Episode 2.vob"), plan.siblings.map { it.name })
+    assertEquals(listOf("New", "Old", "new.mp4", "old.mp4"), sorted.map { it.name })
   }
 
   @Test
-  fun `resume index points at the most recently played sibling`() {
-    val siblings =
-      listOf(
-        entry("Episode 1"),
-        entry("Episode 2"),
-        entry("Episode 3"),
-      )
-
-    val index = NetworkFolderQueue.resumeIndex(siblings, recentNames = listOf("Episode 2.mp4"))
-
-    assertEquals(1, index)
-  }
-
-  @Test
-  fun `resume index falls back to the first sibling when nothing was played`() {
-    val siblings = listOf(entry("Episode 1"), entry("Episode 2"))
-
-    assertEquals(0, NetworkFolderQueue.resumeIndex(siblings, recentNames = emptyList()))
-    assertEquals(0, NetworkFolderQueue.resumeIndex(siblings, recentNames = listOf("Other Show.mkv")))
-  }
-
-  @Test
-  fun `plan is null when the current video is the only one`() {
+  fun `numeric names tie-break naturally`() {
     val listing =
       listOf(
-        entry("Episode 1"),
-        entry("Extras", isDirectory = true),
-        entry("cover.jpg", mime = "image/jpeg"),
+        file("Episode 10", isDirectory = true, lastModified = 100),
+        file("Episode 2", isDirectory = true, lastModified = 100),
       )
 
-    assertNull(NetworkFolderQueue.plan(listing, currentPath = "Show/Episode 1"))
+    val sorted = SortUtils.sortNetworkFiles(listing)
+
+    assertEquals(listOf("Episode 2", "Episode 10"), sorted.map { it.name })
   }
 
   @Test
-  fun `plan is null when the current file is missing from the listing`() {
-    val listing = listOf(entry("Episode 1"), entry("Episode 2"))
+  fun `equal timestamps break ties alphabetically`() {
+    val listing =
+      listOf(
+        file("banana", isDirectory = true, lastModified = 100),
+        file("Apple", isDirectory = true, lastModified = 100),
+        file("cherry", isDirectory = true, lastModified = 100),
+      )
 
-    assertNull(NetworkFolderQueue.plan(listing, currentPath = "Show/Episode 3"))
+    val sorted = SortUtils.sortNetworkFiles(listing)
+
+    assertEquals(listOf("Apple", "banana", "cherry"), sorted.map { it.name })
+  }
+
+  // ---- dedupe (listing normalization) ----
+
+  @Test
+  fun `duplicate entries in a listing collapse to the first occurrence`() {
+    val listing =
+      listOf(
+        file("Movies"),
+        file("Movies"),
+        file("Music"),
+      )
+
+    val deduplicated = NetworkRepository.deduplicated(listing)
+
+    assertEquals(listOf(file("Movies"), file("Music")), deduplicated)
+  }
+
+  // ---- continue plan (watch frontier) ----
+
+  @Test
+  fun `continue index is the latest in-progress episode`() {
+    val siblings = listOf(episode("Episode 1"), episode("Episode 2"), episode("Episode 3"), episode("Episode 4"))
+    val states =
+      mapOf(
+        "Show/Episode 1" to watched("Episode 1", finished = true),
+        "Show/Episode 2" to watched("Episode 2", finished = true),
+        "Show/Episode 3" to watched("Episode 3", finished = false), // in progress
+      )
+
+    val index = NetworkFolderQueue.continueIndex(siblings, states) { it.path }
+
+    assertEquals(2, index) // Episode 3
+  }
+
+  @Test
+  fun `continue index is the episode after the last finished one`() {
+    val siblings = listOf(episode("Episode 1"), episode("Episode 2"), episode("Episode 3"))
+    val states =
+      mapOf(
+        "Show/Episode 1" to watched("Episode 1", finished = true),
+        "Show/Episode 2" to watched("Episode 2", finished = true),
+      )
+
+    val index = NetworkFolderQueue.continueIndex(siblings, states) { it.path }
+
+    assertEquals(2, index) // Episode 3 — next unwatched
+  }
+
+  @Test
+  fun `continue index is the first episode when nothing was watched`() {
+    val siblings = listOf(episode("Episode 1"), episode("Episode 2"))
+
+    assertEquals(0, NetworkFolderQueue.continueIndex(siblings, emptyMap()) { NetworkRecent.playbackKey(1, it.path) })
+  }
+
+  @Test
+  fun `continue index ignores states from other folders`() {
+    val siblings = listOf(episode("Episode 1"), episode("Episode 2"))
+    val states =
+      mapOf(
+        "network_1_${"Other/Episode 1".hashCode()}" to watched("Episode 1", finished = true),
+      )
+
+    assertEquals(0, NetworkFolderQueue.continueIndex(siblings, states) { it.path })
   }
 }

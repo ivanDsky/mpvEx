@@ -40,6 +40,46 @@ object NetworkFolderQueue {
   }
 
   /**
+   * Index of the episode to continue a folder from, based on saved watch
+   * states (keyed by [playbackKeyOf]):
+   * - the latest IN-PROGRESS episode (started, not finished) resumes at its
+   *   position;
+   * - otherwise the first UNWATCHED episode after the watched run plays from
+   *   its start;
+   * - otherwise (nothing watched, or everything watched) the first episode.
+   */
+  fun continueIndex(
+    siblings: List<NetworkFile>,
+    states: Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>,
+    playbackKeyOf: (NetworkFile) -> String,
+  ): Int {
+    data class Progress(
+      val index: Int,
+      val started: Boolean,
+      val finished: Boolean,
+    )
+
+    val progress =
+      siblings.mapIndexed { index, file ->
+        val state = states[playbackKeyOf(file)]
+        Progress(
+          index = index,
+          started = state != null && (state.lastPosition > 0 || state.hasBeenWatched),
+          finished = state != null && state.hasBeenWatched && state.timeRemaining <= 0,
+        )
+      }
+
+    // The latest episode with watch history is where the user left off:
+    // still in progress -> resume it; finished -> continue with the next.
+    val lastStarted = progress.lastOrNull { it.started } ?: return 0
+    return if (!lastStarted.finished) {
+      lastStarted.index
+    } else {
+      progress.getOrNull(lastStarted.index + 1)?.index ?: 0
+    }
+  }
+
+  /**
    * Index of the episode to resume a folder from: the most recently played
    * sibling (matched by file name against [recentNames], newest first), or
    * the first sibling when nothing in this folder was played yet.
