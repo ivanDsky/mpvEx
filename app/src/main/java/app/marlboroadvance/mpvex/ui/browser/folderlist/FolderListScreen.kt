@@ -1281,10 +1281,13 @@ private fun PinnedNetworkFoldersSection(
           ),
         ) {
           Column(modifier = Modifier.padding(12.dp)) {
+            // Thumbnail square (current episode frame) — kept separate from
+            // the progress indicator.
             Box(
               modifier = Modifier
-                .fillMaxWidth()
-                .height(32.dp),
+                .size(32.dp)
+                .clip(RoundedCornerShape(8.dp)),
+              contentAlignment = Alignment.Center,
             ) {
               val currentBitmap = pinProgress?.thumbnail
               if (currentBitmap != null) {
@@ -1292,9 +1295,7 @@ private fun PinnedNetworkFoldersSection(
                   bitmap = currentBitmap.asImageBitmap(),
                   contentDescription = null,
                   contentScale = ContentScale.Crop,
-                  modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                  modifier = Modifier.size(32.dp),
                 )
               } else {
                 Icon(
@@ -1304,25 +1305,25 @@ private fun PinnedNetworkFoldersSection(
                   modifier = Modifier.size(32.dp),
                 )
               }
-              // Position badge: "i/n" — where you are in the folder
-              if (pinProgress != null && pinProgress.totalCount > 0) {
-                Surface(
-                  shape = RoundedCornerShape(6.dp),
-                  color = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.align(Alignment.TopEnd),
-                ) {
-                  Text(
-                    text = "${pinProgress.currentIndex}/${pinProgress.totalCount}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                  )
-                }
-              }
             }
             Spacer(modifier = Modifier.height(8.dp))
+            // Progress square — independent of the thumbnail
+            if (pinProgress != null && pinProgress.totalCount > 0) {
+              Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = MaterialTheme.colorScheme.primary,
+              ) {
+                Text(
+                  text = "${pinProgress.currentIndex}/${pinProgress.totalCount}",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onPrimary,
+                  maxLines = 1,
+                  softWrap = false,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+              }
+              Spacer(modifier = Modifier.height(6.dp))
+            }
             Text(
               text = folder.name,
               style = MaterialTheme.typography.bodyMedium,
@@ -1338,6 +1339,7 @@ private fun PinnedNetworkFoldersSection(
               overflow = TextOverflow.Ellipsis,
             )
           }
+
         }
       }
     }

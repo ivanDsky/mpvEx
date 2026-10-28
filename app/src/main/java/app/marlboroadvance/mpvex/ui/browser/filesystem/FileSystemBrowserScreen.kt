@@ -690,9 +690,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
               onClick = {
                 isFabExpanded.value = false
                 coroutineScope.launch {
-                  val recentlyPlayedVideos = listOfNotNull(app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps.getLastPlayedEntity())
-                  val lastPlayed = recentlyPlayedVideos.firstOrNull()
-                  if (lastPlayed != null) {
+                  app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps.getLastPlayedEntity()?.let { lastPlayed ->
                     MediaUtils.playFile(lastPlayed.filePath, context, "recently_played_button")
                   }
                 }
