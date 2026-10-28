@@ -17,6 +17,9 @@ class PlaybackStateRepositoryImpl(
   override suspend fun getAllPlaybackStates(): List<PlaybackStateEntity> =
     database.videoDataDao().getAllPlaybackStates()
 
+  override suspend fun getNetworkPlaybackStates(): List<PlaybackStateEntity> =
+    database.videoDataDao().getNetworkPlaybackStates()
+
   override suspend fun clearAllPlaybackStates() {
     database.videoDataDao().clearAllPlaybackStates()
   }

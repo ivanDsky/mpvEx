@@ -20,6 +20,7 @@ import app.marlboroadvance.mpvex.utils.permission.PermissionUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -41,7 +42,10 @@ data class PinnedNetworkFolder(
   val connectionName: String,
   val path: String,
   val name: String,
-)
+) {
+  /** Stable map key for per-pin cached state. */
+  fun progressKey() = "$connectionId:$path"
+}
 
 class FolderListViewModel(
   application: Application,
@@ -129,13 +133,13 @@ class FolderListViewModel(
         _pinnedNetworkFolders.value = folders
         // Resolve i/n + current-episode frame for pins we haven't yet.
         folders
-          .map { "${it.connectionId}:${it.path}" }
+          .map { it.progressKey() }
           .filter { it !in _pinnedProgress.value }
           .forEach { key ->
-            val folder = folders.first { "${it.connectionId}:${it.path}" == key }
+            val folder = folders.first { it.progressKey() == key }
             viewModelScope.launch(Dispatchers.IO) {
               val progress = resolvePinProgress(folder) ?: return@launch
-              _pinnedProgress.value = _pinnedProgress.value + (key to progress)
+              _pinnedProgress.update { it + (key to progress) }
             }
           }
       }
@@ -195,27 +199,29 @@ class FolderListViewModel(
     }
   }
 
+  /** History file names inside one pinned folder, newest first. */
+  private suspend fun folderScopedRecentNames(folder: PinnedNetworkFolder): List<String> {
+    val folderPrefix =
+      app.marlboroadvance.mpvex.domain.network.NetworkRecent
+        .recentPath(folder.connectionId, folder.path) + "/"
+    return app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps
+      .getRecentlyPlayed(limit = 50)
+      .filter { it.filePath.startsWith(folderPrefix) }
+      .map { it.fileName }
+  }
+
   private suspend fun resolvePinProgress(folder: PinnedNetworkFolder): PinProgress? {
     val connection = networkRepository.getConnectionById(folder.connectionId) ?: return null
     val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return null
     val videos = NetworkFolderQueue.orderedVideos(listing)
     if (videos.isEmpty()) return PinProgress(currentIndex = 0, totalCount = 0, thumbnail = null)
 
-    // Only history entries that live inside this pinned folder, so another
-    // show's identically-named episode can't hijack the position.
-    val folderPrefix =
-      app.marlboroadvance.mpvex.domain.network.NetworkRecent
-        .recentPath(folder.connectionId, folder.path) + "/"
-    val recentNames =
-      app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps
-        .getRecentlyPlayed(limit = 50)
-        .filter { it.filePath.startsWith(folderPrefix) }
-        .map { it.fileName }
+    val recentNames = folderScopedRecentNames(folder)
     val index = NetworkFolderQueue.resumeIndex(videos, recentNames)
     val thumbnail =
       app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
         .get(getApplication(), playbackStarter)
-        .getOrLoad(connection, videos[index], 256)
+        .getOrLoad(connection, videos[index])
     return PinProgress(currentIndex = index + 1, totalCount = videos.size, thumbnail = thumbnail)
   }
 

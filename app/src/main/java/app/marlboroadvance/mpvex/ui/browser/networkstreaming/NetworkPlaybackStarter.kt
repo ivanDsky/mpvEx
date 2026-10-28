@@ -8,7 +8,6 @@ import app.marlboroadvance.mpvex.domain.network.NetworkFile
 import app.marlboroadvance.mpvex.domain.network.NetworkFolderQueue
 import app.marlboroadvance.mpvex.domain.network.NetworkRecent
 import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
-import android.graphics.Bitmap
 import app.marlboroadvance.mpvex.repository.NetworkRepository
 import app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy
 import kotlinx.coroutines.Dispatchers
@@ -89,27 +88,36 @@ class NetworkPlaybackStarter(
       }
     }
 
+  data class RegisteredStream(
+    val streamId: String,
+    val url: String,
+  )
+
   /**
    * Register a file with the streaming proxy for a one-off read (e.g.
-   * thumbnail extraction) and hand the local URL to [block]. The stream
-   * stays registered — extraction results are cached by the caller.
+   * thumbnail extraction). Pair with [unregisterStream] when done —
+   * the stream deliberately stays registered for the URL to keep working.
    */
-  suspend fun withRegisteredStream(
+  fun registerOneOffStream(
     connection: NetworkConnection,
     file: NetworkFile,
-    block: suspend (url: String) -> Bitmap?,
-  ): Bitmap? {
-    val proxy = NetworkStreamingProxy.getInstance()
+  ): RegisteredStream {
     val streamId = "thumb_${connection.id}_${file.path.hashCode()}"
     val url =
-      proxy.registerStream(
-        streamId = streamId,
-        connection = connection,
-        filePath = file.path,
-        fileSize = if (file.size > 0) file.size else -1L,
-        mimeType = file.mimeType ?: "video/mp4",
-      )
-    return block(url)
+      NetworkStreamingProxy
+        .getInstance()
+        .registerStream(
+          streamId = streamId,
+          connection = connection,
+          filePath = file.path,
+          fileSize = if (file.size > 0) file.size else -1L,
+          mimeType = file.mimeType ?: "video/mp4",
+        )
+    return RegisteredStream(streamId, url)
+  }
+
+  fun unregisterStream(streamId: String) {
+    NetworkStreamingProxy.getInstance().unregisterStream(streamId)
   }
 
   /**

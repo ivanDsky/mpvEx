@@ -34,6 +34,9 @@ interface PlaybackStateDao {
   @Query("SELECT * FROM PlaybackStateEntity")
   suspend fun getAllPlaybackStates(): List<PlaybackStateEntity>
 
+  @Query("SELECT * FROM PlaybackStateEntity WHERE mediaTitle LIKE 'network_%'")
+  suspend fun getNetworkPlaybackStates(): List<PlaybackStateEntity>
+
   @Upsert
   suspend fun upsertAll(playbackStates: List<PlaybackStateEntity>)
 }

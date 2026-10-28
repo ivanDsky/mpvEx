@@ -34,34 +34,35 @@ class NetworkThumbnailCache private constructor(
   fun cached(
     connectionId: Long,
     file: NetworkFile,
-    dimension: Int,
   ): Bitmap? = memoryCache.get(memoryKey(connectionId, file)) ?: loadFromDisk(connectionId, file)
 
   /** Cached frame, or extract one through the streaming proxy. */
   suspend fun getOrLoad(
     connection: NetworkConnection,
     file: NetworkFile,
-    dimension: Int,
   ): Bitmap? =
     withContext(Dispatchers.IO) {
-      cached(connection.id, file, dimension)?.let { return@withContext it }
+      cached(connection.id, file)?.let { return@withContext it }
 
       extractMutex.withLock {
-        cached(connection.id, file, dimension)?.let { return@withContext it }
+        cached(connection.id, file)?.let { return@withContext it }
 
-        runCatching {
-          playbackStarter.withRegisteredStream(connection, file) { url ->
+        val stream = playbackStarter.registerOneOffStream(connection, file)
+        val bitmap =
+          runCatching {
             FastThumbnails.generateAsync(
-              url,
+              stream.url,
               PREFERRED_POSITION_SECONDS,
-              dimension,
+              DIMENSION,
               useHwDec = false,
             )
-          }
-        }.getOrNull()?.also { bitmap ->
-          memoryCache.put(memoryKey(connection.id, file), bitmap)
-          writeToDisk(connection.id, file, bitmap)
+          }.getOrNull()
+        bitmap?.let {
+          memoryCache.put(memoryKey(connection.id, file), it)
+          writeToDisk(connection.id, file, it)
         }
+        playbackStarter.unregisterStream(stream.streamId)
+        bitmap
       }
     }
 
@@ -94,12 +95,31 @@ class NetworkThumbnailCache private constructor(
         bitmap.compress(CompressFormat.JPEG, JPEG_QUALITY, out)
       }
     }
+    evictOldEntries()
+  }
+
+  /** Keep the disk cache bounded: oldest files first, [DISK_CACHE_BYTES] total. */
+  private fun evictOldEntries() {
+    runCatching {
+      val dir = File(context.cacheDir, "network_thumbs")
+      val files = dir.listFiles() ?: return@runCatching
+      var total = files.sumOf { it.length() }
+      if (total <= DISK_CACHE_BYTES) return@runCatching
+      files
+        .sortedBy { it.lastModified() }
+        .forEach { file ->
+          if (total <= DISK_CACHE_BYTES) return@forEach
+          total -= file.length()
+          file.delete()
+        }
+    }
   }
 
   companion object {
     private const val DIMENSION = 256
     private const val JPEG_QUALITY = 85
     private const val PREFERRED_POSITION_SECONDS = 2.0
+    private const val DISK_CACHE_BYTES = 64L * 1024 * 1024
 
     @Volatile
     private var instance: NetworkThumbnailCache? = null

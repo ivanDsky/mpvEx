@@ -43,7 +43,7 @@ class NetworkRecentTest {
   fun `playback key matches the player identifier format`() {
     val path = "Movies/Episode 2.mp4"
 
-    assertEquals("network_3_${path.hashCode()}", NetworkRecent.playbackKey(3, path))
+    assertEquals("network_3_-922030332", NetworkRecent.playbackKey(3, path))
   }
 
   @Test
