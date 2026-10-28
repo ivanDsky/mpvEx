@@ -244,6 +244,12 @@ class PlayerActivity :
   // advances, so history/progress/subtitles track the RIGHT episode.
   private var currentNetworkConnectionId: Long = -1L
   private var currentNetworkFilePath: String? = null
+
+  // True while a playlist/launch switch is loading the next file: mpv still
+  // reports the OLD position during the gap, and a save in that window would
+  // store it under the NEW episode's key (next video resumes at the end).
+  @Volatile
+  private var playlistItemSwitchInProgress = false
   private var wasPlayingBeforePause = false // Track if video was playing before pause
 
   // ==================== Background Playback ====================
@@ -1702,6 +1708,9 @@ savePlaybackStateJob?.let { job ->
       mediaIdentifier = getMediaIdentifier(intent, fileName)
     }
 
+    // The new file is loaded — its time-pos is now trustworthy again.
+    playlistItemSwitchInProgress = false
+
     // Record history before anything that could block the main thread.
     lifecycleScope.launch { saveRecentlyPlayed() }
 
@@ -2025,6 +2034,11 @@ savePlaybackStateJob?.let { job ->
    *               Essential during onPause when finishing so the state is written before MainActivity resumes.
    */
   private fun saveVideoPlaybackState(mediaTitle: String, isSync: Boolean = false) {
+    // A playlist/launch switch is loading the next file: mpv still reports the
+    // old position, which must not be stored under the new episode's key. The
+    // switch itself already saved the outgoing episode before setting this.
+    if (playlistItemSwitchInProgress) return
+
     // Capture the identifier now: this save is written to the database
     // asynchronously, and a playlist switch mutates mediaIdentifier to the NEXT
     // video right after launching it. Reading the field inside saveBlock could
@@ -2360,6 +2374,9 @@ savePlaybackStateJob?.let { job ->
    */
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
+
+    // Block saves while the new file loads (cleared in handleFileLoaded).
+    playlistItemSwitchInProgress = true
 
     // Update the intent first so getFileName uses the new intent data
     setIntent(intent)
@@ -3083,6 +3100,10 @@ savePlaybackStateJob?.let { job ->
     if (fileName.isNotBlank()) {
       saveVideoPlaybackState(fileName)
     }
+
+    // Block saves while the next file loads: mpv still reports the old
+    // position during the gap. Cleared in handleFileLoaded.
+    playlistItemSwitchInProgress = true
 
     val uri = playlist[index]
 
