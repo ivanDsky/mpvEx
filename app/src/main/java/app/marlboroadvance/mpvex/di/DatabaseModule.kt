@@ -5,6 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.marlboroadvance.mpvex.database.MpvExDatabase
+import app.marlboroadvance.mpvex.database.repository.PinnedFolderRepository
 import app.marlboroadvance.mpvex.database.repository.PlaybackStateRepositoryImpl
 import app.marlboroadvance.mpvex.database.repository.PlaylistRepository
 import app.marlboroadvance.mpvex.database.repository.RecentlyPlayedRepositoryImpl
@@ -355,6 +356,23 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
  * - Ensures PlaybackStateEntity has the correct schema by recreating the table
  * - Preserves all existing data during the migration
  */
+val MIGRATION_9_10 =
+  object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS `pinned_folders` (
+          `connectionId` INTEGER NOT NULL,
+          `path` TEXT NOT NULL,
+          `name` TEXT NOT NULL,
+          `pinnedAt` INTEGER NOT NULL,
+          PRIMARY KEY(`connectionId`, `path`)
+        )
+        """,
+      )
+    }
+  }
+
 val MIGRATION_8_9 = object : Migration(8, 9) {
   override fun migrate(db: SupportSQLiteDatabase) {
     try {
@@ -474,12 +492,16 @@ val DatabaseModule =
       Room
         .databaseBuilder(context, MpvExDatabase::class.java, "mpvex.db")
         .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
         .fallbackToDestructiveMigration(true) // Fallback if migration fails (last resort)
         .build()
     }
 
     singleOf(::PlaybackStateRepositoryImpl).bind(PlaybackStateRepository::class)
+
+    single {
+      PinnedFolderRepository(get<MpvExDatabase>().pinnedFolderDao())
+    }
 
     single<RecentlyPlayedRepository> {
       RecentlyPlayedRepositoryImpl(get<MpvExDatabase>().recentlyPlayedDao())
@@ -503,6 +525,7 @@ val DatabaseModule =
     single {
       app.marlboroadvance.mpvex.repository.NetworkRepository(
         dao = get(),
+        pinnedFolderDao = get<MpvExDatabase>().pinnedFolderDao(),
       )
     }
 

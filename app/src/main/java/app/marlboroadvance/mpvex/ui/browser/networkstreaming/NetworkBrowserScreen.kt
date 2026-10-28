@@ -12,11 +12,13 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -73,6 +75,8 @@ data class NetworkBrowserScreen(
     val files by viewModel.files.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val pinnedPaths by viewModel.pinnedPaths.collectAsState()
+    var pinSheetFolder by remember { mutableStateOf<NetworkFile?>(null) }
 
     // UI State
     val isRefreshing = remember { mutableStateOf(false) }
@@ -129,11 +133,42 @@ data class NetworkBrowserScreen(
             ),
           )
         },
+        onFolderLongClick = { folder ->
+          pinSheetFolder = folder
+        },
         onVideoClick = { video ->
           viewModel.playVideo(video)
         },
         modifier = Modifier.padding(padding),
       )
+
+      pinSheetFolder?.let { folder ->
+        val pinned = folder.path in pinnedPaths
+        AlertDialog(
+          onDismissRequest = { pinSheetFolder = null },
+          title = { Text(folder.name) },
+          text = {
+            Text(
+              if (pinned) {
+                "This folder is pinned to the Home tab."
+              } else {
+                "Pin this folder to the Home tab for quick access."
+              },
+            )
+          },
+          confirmButton = {
+            TextButton(
+              onClick = {
+                viewModel.togglePin(folder)
+                pinSheetFolder = null
+              },
+            ) { Text(if (pinned) "Unpin from Home" else "Pin to Home") }
+          },
+          dismissButton = {
+            TextButton(onClick = { pinSheetFolder = null }) { Text("Cancel") }
+          },
+        )
+      }
     }
   }
 }
@@ -148,6 +183,7 @@ private fun NetworkBrowserContent(
   error: String?,
   onRefresh: suspend () -> Unit,
   onFolderClick: (NetworkFile) -> Unit,
+  onFolderLongClick: (NetworkFile) -> Unit,
   onVideoClick: (NetworkFile) -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -268,6 +304,7 @@ private fun NetworkBrowserContent(
                 NetworkFolderCard(
                   file = folder,
                   onClick = { onFolderClick(folder) },
+                  onLongClick = { onFolderLongClick(folder) },
                   modifier = Modifier,
                 )
               }

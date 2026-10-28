@@ -34,6 +34,14 @@ data class FolderWithNewCount(
   val newVideoCount: Int = 0,
 )
 
+/** A pinned network folder joined with its connection name for the Home shelf. */
+data class PinnedNetworkFolder(
+  val connectionId: Long,
+  val connectionName: String,
+  val path: String,
+  val name: String,
+)
+
 class FolderListViewModel(
   application: Application,
 ) : BaseBrowserViewModel(application),
@@ -42,6 +50,8 @@ class FolderListViewModel(
   private val appearancePreferences: AppearancePreferences by inject()
   private val browserPreferences: app.marlboroadvance.mpvex.preferences.BrowserPreferences by inject()
   private val playbackStateRepository: PlaybackStateRepository by inject()
+  private val pinnedFolderRepository: app.marlboroadvance.mpvex.database.repository.PinnedFolderRepository by inject()
+  private val networkRepository: app.marlboroadvance.mpvex.repository.NetworkRepository by inject()
 
   private val _allVideoFolders = MutableStateFlow<List<VideoFolder>>(emptyList())
   private val _videoFolders = MutableStateFlow<List<VideoFolder>>(emptyList())
@@ -49,6 +59,9 @@ class FolderListViewModel(
 
   private val _foldersWithNewCount = MutableStateFlow<List<FolderWithNewCount>>(emptyList())
   val foldersWithNewCount: StateFlow<List<FolderWithNewCount>> = _foldersWithNewCount.asStateFlow()
+
+  private val _pinnedNetworkFolders = MutableStateFlow<List<PinnedNetworkFolder>>(emptyList())
+  val pinnedNetworkFolders: StateFlow<List<PinnedNetworkFolder>> = _pinnedNetworkFolders.asStateFlow()
 
   // Only show loading on fresh install (when there's no cached data)
   private val _isLoading = MutableStateFlow(false)
@@ -88,6 +101,21 @@ class FolderListViewModel(
   }
 
   init {
+    // Pinned network folders for the Home shelf (newest pin first; the DAO orders)
+    viewModelScope.launch {
+      combine(
+        pinnedFolderRepository.observeAll(),
+        networkRepository.getAllConnections(),
+      ) { pins, connections ->
+        val byId = connections.associateBy { it.id }
+        pins.mapNotNull { pin ->
+          byId[pin.connectionId]?.let { connection ->
+            PinnedNetworkFolder(connection.id, connection.name, pin.path, pin.name)
+          }
+        }
+      }.collect { _pinnedNetworkFolders.value = it }
+    }
+
     // Load cached folders instantly for immediate display
     val hasCachedData = loadCachedFolders()
 
@@ -139,6 +167,13 @@ class FolderListViewModel(
           app.marlboroadvance.mpvex.repository.VideoStatCache.preload(getApplication(), folder.bucketId)
         }
       }
+    }
+  }
+
+  /** Remove a network folder from the Home shelf. */
+  fun unpinNetworkFolder(folder: PinnedNetworkFolder) {
+    viewModelScope.launch {
+      pinnedFolderRepository.unpin(folder.connectionId, folder.path)
     }
   }
 

@@ -1,6 +1,9 @@
 [versions]
 agp = "9.4.0"
 junit = "4.13.2"
+robolectric = "4.16"
+androidxTestCore = "1.7.0"
+coroutinesTest = "1.10.2"
 commonsNet = "3.13.0"
 smbj = "0.14.0"
 kotlin = "2.3.20"
@@ -22,6 +25,9 @@ mediainfo-android = "1.0.2"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-core = { group = "androidx.test", name = "core-ktx", version.ref = "androidxTestCore" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 commons-net = { module = "commons-net:commons-net", version.ref = "commonsNet" }

@@ -109,6 +109,12 @@ android {
     buildConfig = true
   }
 
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+    }
+  }
+
 
   packaging {
     resources {
@@ -225,6 +231,9 @@ dependencies {
   implementation(libs.reorderable)
 
   testImplementation(libs.junit)
+  testImplementation(libs.robolectric)
+  testImplementation(libs.androidx.test.core)
+  testImplementation(libs.kotlinx.coroutines.test)
 }
 
 /* ---------------- Git helpers ---------------- */

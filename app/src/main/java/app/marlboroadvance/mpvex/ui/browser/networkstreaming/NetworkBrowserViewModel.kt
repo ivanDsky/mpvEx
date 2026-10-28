@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import android.net.Uri
 import app.marlboroadvance.mpvex.domain.network.NetworkConnection
 import app.marlboroadvance.mpvex.domain.network.NetworkFile
+import app.marlboroadvance.mpvex.database.repository.PinnedFolderRepository
 import app.marlboroadvance.mpvex.domain.network.NetworkFolderQueue
 import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
 import app.marlboroadvance.mpvex.repository.NetworkRepository
@@ -20,6 +21,7 @@ import java.net.URLEncoder
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -36,8 +38,33 @@ class NetworkBrowserViewModel(
   KoinComponent {
   private val repository: NetworkRepository by inject()
 
+  private val pinnedFolderRepository: PinnedFolderRepository by inject()
+
   private val _files = MutableStateFlow<List<NetworkFile>>(emptyList())
   val files: StateFlow<List<NetworkFile>> = _files.asStateFlow()
+
+  private val _pinnedPaths = MutableStateFlow<Set<String>>(emptySet())
+  val pinnedPaths: StateFlow<Set<String>> = _pinnedPaths.asStateFlow()
+
+  init {
+    viewModelScope.launch {
+      pinnedFolderRepository
+        .observeForConnection(connectionId)
+        .map { pins -> pins.map { it.path }.toSet() }
+        .collect { _pinnedPaths.value = it }
+    }
+  }
+
+  /** Pin a folder to Home, or unpin it if already pinned. */
+  fun togglePin(file: NetworkFile) {
+    viewModelScope.launch {
+      if (file.path in _pinnedPaths.value) {
+        pinnedFolderRepository.unpin(connectionId, file.path)
+      } else {
+        pinnedFolderRepository.pin(connectionId, file.path, file.name)
+      }
+    }
+  }
 
   private val _isLoading = MutableStateFlow(false)
   val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()

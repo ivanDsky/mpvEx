@@ -1,6 +1,7 @@
 package app.marlboroadvance.mpvex.repository
 
 import app.marlboroadvance.mpvex.database.dao.NetworkConnectionDao
+import app.marlboroadvance.mpvex.database.dao.PinnedFolderDao
 import app.marlboroadvance.mpvex.domain.network.ConnectionStatus
 import app.marlboroadvance.mpvex.domain.network.NetworkConnection
 import app.marlboroadvance.mpvex.domain.network.NetworkFile
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class NetworkRepository(
   private val dao: NetworkConnectionDao,
+  private val pinnedFolderDao: PinnedFolderDao,
 ) {
   // Active network clients
   private val activeClients = mutableMapOf<Long, NetworkClient>()
@@ -75,6 +77,8 @@ class NetworkRepository(
    */
   suspend fun deleteConnection(connection: NetworkConnection) {
     dao.delete(connection)
+    // A connection's Home pins are removed with it
+    pinnedFolderDao.deleteForConnection(connection.id)
     // Clean up connection status
     _connectionStatuses.value -= connection.id
     // Disconnect if active

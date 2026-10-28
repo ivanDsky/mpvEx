@@ -12,6 +12,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -509,7 +520,22 @@ object FolderListScreen : Screen {
       },
     ) { padding ->
       Box(modifier = Modifier.padding(padding)) {
-        when (permissionState.status) {
+        Column(modifier = Modifier.fillMaxSize()) {
+          val pinnedNetworkFolders by viewModel.pinnedNetworkFolders.collectAsState()
+          PinnedNetworkFoldersSection(
+            folders = pinnedNetworkFolders,
+            onFolderClick = { folder ->
+              backstack.add(
+                app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkBrowserScreen(
+                  connectionId = folder.connectionId,
+                  connectionName = folder.connectionName,
+                  currentPath = folder.path,
+                ),
+              )
+            },
+            onUnpin = { viewModel.unpinNetworkFolder(it) },
+          )
+          when (permissionState.status) {
           PermissionStatus.Granted -> {
             if (isSearching) {
               // Show search results
@@ -583,6 +609,7 @@ object FolderListScreen : Screen {
               onRequestPermission = { permissionState.launchPermissionRequest() },
               modifier = Modifier,
             )
+          }
           }
         }
       }
@@ -1189,4 +1216,90 @@ private suspend fun searchFoldersAndVideos(
   }
   
   return results
+}
+
+/**
+ * "Network folders" shelf at the top of the Home tab: pinned WebDAV/SMB/FTP
+ * folders as a horizontal row of compact cards, most recently pinned first.
+ * Cards render statically from the pin record; tapping opens the network
+ * browser at the folder (connection errors surface there); long-press unpins.
+ */
+@Composable
+private fun PinnedNetworkFoldersSection(
+  folders: List<app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder>,
+  onFolderClick: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
+  onUnpin: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
+) {
+  if (folders.isEmpty()) return
+
+  Column(modifier = Modifier.fillMaxWidth()) {
+    Text(
+      text = "Network folders",
+      style = MaterialTheme.typography.titleMedium,
+      fontWeight = FontWeight.Bold,
+      modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
+    )
+    LazyRow(
+      contentPadding = PaddingValues(horizontal = 16.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      modifier = Modifier.fillMaxWidth(),
+    ) {
+      items(folders) { folder ->
+        var showUnpinMenu by remember { mutableStateOf(false) }
+        Card(
+          modifier = Modifier
+            .width(140.dp)
+            .combinedClickable(
+              onClick = { onFolderClick(folder) },
+              onLongClick = { showUnpinMenu = true },
+            ),
+          colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+          ),
+        ) {
+          Column(modifier = Modifier.padding(12.dp)) {
+            Icon(
+              imageVector = Icons.Filled.Folder,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(32.dp),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+              text = folder.name,
+              style = MaterialTheme.typography.bodyMedium,
+              fontWeight = FontWeight.SemiBold,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+              text = folder.connectionName,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+        if (showUnpinMenu) {
+          AlertDialog(
+            onDismissRequest = { showUnpinMenu = false },
+            title = { Text(folder.name) },
+            text = { Text("Remove this folder from the Home tab?") },
+            confirmButton = {
+              TextButton(
+                onClick = {
+                  onUnpin(folder)
+                  showUnpinMenu = false
+                },
+              ) { Text("Unpin from Home") }
+            },
+            dismissButton = {
+              TextButton(onClick = { showUnpinMenu = false }) { Text("Cancel") }
+            },
+          )
+        }
+      }
+    }
+  }
 }
