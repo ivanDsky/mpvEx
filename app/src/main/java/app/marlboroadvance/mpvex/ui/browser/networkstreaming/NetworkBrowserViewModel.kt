@@ -98,18 +98,10 @@ class NetworkBrowserViewModel(
     return fraction.takeIf { it < 0.99f }
   }
 
-  /** Cached frame, or extract at the file's saved/first position through the starter. */
+  /** Cached frame, or extract the first frame through the starter. */
   suspend fun thumbnailFor(file: NetworkFile): android.graphics.Bitmap? {
-    val positionSec = resumePositionSeconds(file)
-      ?: NetworkThumbnailCache.DEFAULT_POSITION_SECONDS
-    thumbnailCache.cached(connectionId, file.path, positionSec)?.let { return it }
-    return playbackStarter.extractFrameById(connectionId, file, positionSec)
-  }
-
-  /** Saved resume position of an in-progress network file in seconds. */
-  fun resumePositionSeconds(file: NetworkFile): Double? {
-    val state = _playbackStates.value[NetworkRecent.playbackKey(connectionId, file.path)] ?: return null
-    return state.lastPosition.takeIf { it > 0 }?.toDouble()
+    thumbnailCache.cached(connectionId, file.path)?.let { return it }
+    return playbackStarter.extractFrameById(connectionId, file)
   }
 
   /** Pin a folder to Home, or unpin it if already pinned. */

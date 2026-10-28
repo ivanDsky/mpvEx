@@ -238,12 +238,7 @@ class PlayerActivity :
     val frame = runCatching { MPVLib.grabThumbnail(512) }.getOrNull() ?: return
     app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
       .get(applicationContext)
-      .put(
-        connectionId = currentNetworkConnectionId,
-        path = currentNetworkFilePath!!,
-        bitmap = frame,
-        positionSec = positionSec,
-      )
+      .put(currentNetworkConnectionId, currentNetworkFilePath!!, frame)
     Log.d(TAG, "Captured network frame for thumbnail cache: $currentNetworkFilePath @$positionSec s")
   }
 

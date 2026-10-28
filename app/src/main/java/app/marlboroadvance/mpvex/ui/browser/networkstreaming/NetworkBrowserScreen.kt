@@ -156,7 +156,6 @@ data class NetworkBrowserScreen(
         },
         thumbnailCache = thumbnailCache,
         progressFraction = { file -> viewModel.progressFraction(file) },
-        resumePositionSeconds = { file -> viewModel.resumePositionSeconds(file) },
         thumbnailRefreshKey = thumbnailRefreshKey,
         modifier = Modifier.padding(padding),
       )
@@ -206,7 +205,6 @@ private fun NetworkBrowserContent(
   onVideoClick: (NetworkFile) -> Unit,
   thumbnailCache: NetworkThumbnailCache,
   progressFraction: (NetworkFile) -> Float?,
-  resumePositionSeconds: (NetworkFile) -> Double?,
   thumbnailRefreshKey: Int,
   modifier: Modifier = Modifier,
 ) {
@@ -352,9 +350,7 @@ private fun NetworkBrowserContent(
                   var thumbnail by remember(video.path) { mutableStateOf<android.graphics.Bitmap?>(null) }
                   var thumbnailReady by remember(video.path) { mutableStateOf(false) }
                   LaunchedEffect(video.path, thumbnailRefreshKey) {
-                    val positionSec = resumePositionSeconds(video)
-                      ?: NetworkThumbnailCache.DEFAULT_POSITION_SECONDS
-                    thumbnail = thumbnailCache.cached(conn.id, video.path, positionSec)
+                    thumbnail = thumbnailCache.cached(conn.id, video.path)
                   }
                   NetworkVideoCard(
                     file = video,

@@ -74,7 +74,6 @@ class FolderListViewModel(
     val currentIndex: Int,
     val totalCount: Int,
     val thumbnail: android.graphics.Bitmap?,
-    val positionSec: Double,
   )
 
   private val _pinnedProgress = MutableStateFlow<Map<String, PinProgress>>(emptyMap())
@@ -238,16 +237,9 @@ class FolderListViewModel(
     val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return null
     val videos = NetworkFolderQueue.orderedVideos(listing)
     val target = videos.getOrNull(index) ?: return null
-    val positionSec =
-      playbackStateRepository
-        .getVideoDataByTitle(
-          app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, target.path),
-        )
-        ?.lastPosition
-        ?.takeIf { it > 0 }
-        ?.toDouble()
-        ?: app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache.DEFAULT_POSITION_SECONDS
-    return playbackStarter.extractFrameById(folder.connectionId, target, positionSec)
+    return app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
+      .get(getApplication())
+      .cached(folder.connectionId, target.path)
   }
 
   private suspend fun resolvePinProgress(folder: PinnedNetworkFolder): PinProgress? {
@@ -255,44 +247,31 @@ class FolderListViewModel(
     val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return null
     val videos = NetworkFolderQueue.orderedVideos(listing)
     if (videos.isEmpty()) {
-      return PinProgress(
-        currentIndex = 0,
-        totalCount = 0,
-        thumbnail = null,
-        positionSec = app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache.DEFAULT_POSITION_SECONDS,
-      )
+      return PinProgress(currentIndex = 0, totalCount = 0, thumbnail = null)
     }
 
     // Continue target from the watch frontier (playback-state store — local,
-    // instant). The frame comes from the thumbnail cache at the SAME position
-    // bucket the player captured it at — never fetched here, so the shelf
-    // renders instantly.
+    // instant). The frame comes from the thumbnail cache (captured during
+    // playback) — never fetched here, so the shelf renders instantly.
     val states = playbackStateRepository.getNetworkPlaybackStates().associateBy { it.mediaTitle }
-    val recentNames = folderScopedRecentNames(folder)
     val index =
       NetworkFolderQueue.continueTarget(videos, states, { file ->
         app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, file.path)
-      }, recentNames)
+      }, folderScopedRecentNames(folder))
     val target = videos[index]
-    val positionSec =
-      states[app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, target.path)]
-        ?.lastPosition
-        ?.takeIf { it > 0 }
-        ?.toDouble()
-        ?: app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache.DEFAULT_POSITION_SECONDS
     val thumbnail =
       app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
         .get(getApplication())
-        .cached(folder.connectionId, target.path, positionSec)
+        .cached(folder.connectionId, target.path)
 
-    val result = PinProgress(currentIndex = index + 1, totalCount = videos.size, thumbnail = thumbnail, positionSec = positionSec)
+    val result = PinProgress(currentIndex = index + 1, totalCount = videos.size, thumbnail = thumbnail)
 
-    // Cached frame missing (e.g. the periodic grab failed during playback):
-    // extract at the saved position in the background and swap in.
+    // No stored frame (episode never viewed on this device): fetch its first
+    // frame once in the background; the badge is already live either way.
     if (thumbnail == null) {
       viewModelScope.launch(Dispatchers.IO) {
         playbackStarter
-          .extractFrameById(folder.connectionId, target, positionSec)
+          .extractFrameById(folder.connectionId, target)
           ?.let { bitmap ->
             _pinnedProgress.update { it + (folder.progressKey() to result.copy(thumbnail = bitmap)) }
           }

@@ -8,19 +8,14 @@ import android.util.LruCache
 import java.io.File
 
 /**
- * Frame store for network files.
+ * Frame store for network files: ONE frame per file, keyed by connection +
+ * path. The player captures the current frame during playback (so the stored
+ * frame tracks where you stopped); readers never touch the network.
  *
- * Frames come from two sources: extraction through the streaming proxy at a
- * requested position (first frame for unwatched episodes, the saved resume
- * position for in-progress ones), and grabs the player takes DURING
- * playback at the watched position (which override extractions).
- *
- * Keys include a 30 s position bucket, so a frame captured near where you
- * stopped counts as a hit; watching further re-extracts at the new bucket.
- * Reads are memory/disk only — nothing here touches the network on startup.
- * Extraction lives in [NetworkPlaybackStarter.extractFrame].
+ * Episodes never played get their first frame on first view (extraction
+ * through the streaming proxy), which then serves as the thumbnail.
  */
-class NetworkThumbnailCache internal constructor(
+class NetworkThumbnailCache private constructor(
   private val context: Context,
 ) {
   private val memoryCache =
@@ -28,58 +23,30 @@ class NetworkThumbnailCache internal constructor(
       override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
 
-  /** Cached frame for [positionSec], if any (memory or disk). */
-  fun cached(
-    connectionId: Long,
-    path: String,
-    positionSec: Double = DEFAULT_POSITION_SECONDS,
-  ): Bitmap? =
-    memoryCache.get(memoryKey(connectionId, path, positionSec))
-      ?: loadFromDisk(connectionId, path, positionSec)
+  private fun memoryKey(connectionId: Long, path: String): String = "$connectionId|$path"
 
-  /** Store a frame captured/extracted at [positionSec]. */
-  fun put(
-    connectionId: Long,
-    path: String,
-    bitmap: Bitmap,
-    positionSec: Double = DEFAULT_POSITION_SECONDS,
-  ) {
-    memoryCache.put(memoryKey(connectionId, path, positionSec), bitmap)
-    writeToDisk(connectionId, path, positionSec, bitmap)
+  private fun diskFile(connectionId: Long, path: String): File =
+    File(File(context.cacheDir, "network_thumbs"), "${connectionId}_${path.hashCode()}.jpg")
+
+  /** Stored frame, if any (memory or disk) — instant, never touches the network. */
+  fun cached(connectionId: Long, path: String): Bitmap? =
+    memoryCache.get(memoryKey(connectionId, path))
+      ?: loadFromDisk(connectionId, path)
+
+  /** Store/replace the frame for a file. */
+  fun put(connectionId: Long, path: String, bitmap: Bitmap) {
+    memoryCache.put(memoryKey(connectionId, path), bitmap)
+    writeToDisk(connectionId, path, bitmap)
   }
 
-  private fun positionBucket(positionSec: Double): Int =
-    (positionSec / POSITION_BUCKET_SECONDS).toInt()
-
-  private fun memoryKey(
-    connectionId: Long,
-    path: String,
-    positionSec: Double,
-  ): String = "$connectionId|$path|${positionBucket(positionSec)}"
-
-  private fun diskFile(
-    connectionId: Long,
-    path: String,
-    positionSec: Double,
-  ): File = File(File(context.cacheDir, "network_thumbs"), "${connectionId}_${path.hashCode()}_p${positionBucket(positionSec)}.jpg")
-
-  private fun loadFromDisk(
-    connectionId: Long,
-    path: String,
-    positionSec: Double,
-  ): Bitmap? =
+  private fun loadFromDisk(connectionId: Long, path: String): Bitmap? =
     runCatching {
-      diskFile(connectionId, path, positionSec).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.absolutePath) }
+      diskFile(connectionId, path).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.absolutePath) }
     }.getOrNull()
 
-  private fun writeToDisk(
-    connectionId: Long,
-    path: String,
-    positionSec: Double,
-    bitmap: Bitmap,
-  ) {
+  private fun writeToDisk(connectionId: Long, path: String, bitmap: Bitmap) {
     runCatching {
-      val target = diskFile(connectionId, path, positionSec)
+      val target = diskFile(connectionId, path)
       target.parentFile?.mkdirs()
       target.outputStream().use { out ->
         bitmap.compress(CompressFormat.JPEG, JPEG_QUALITY, out)
@@ -107,9 +74,7 @@ class NetworkThumbnailCache internal constructor(
 
   companion object {
     private const val JPEG_QUALITY = 85
-    private const val POSITION_BUCKET_SECONDS = 30
     private const val DISK_CACHE_BYTES = 64L * 1024 * 1024
-    const val DEFAULT_POSITION_SECONDS = 2.0
 
     @Volatile
     private var instance: NetworkThumbnailCache? = null

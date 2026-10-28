@@ -101,7 +101,7 @@ class NetworkPlaybackStarter(
   suspend fun extractFrameById(
     connectionId: Long,
     file: NetworkFile,
-    positionSec: Double,
+    positionSec: Double = 2.0,
     dimension: Int = 512,
   ): android.graphics.Bitmap? {
     val connection = repository.getConnectionById(connectionId) ?: return null
