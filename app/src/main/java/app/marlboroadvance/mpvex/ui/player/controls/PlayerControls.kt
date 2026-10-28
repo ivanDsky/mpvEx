@@ -110,7 +110,6 @@ import app.marlboroadvance.mpvex.ui.player.controls.components.ControlsButton
 import app.marlboroadvance.mpvex.ui.player.controls.components.MultipleSpeedPlayerUpdate
 import app.marlboroadvance.mpvex.ui.player.controls.components.SeekPlayerUpdate
 import app.marlboroadvance.mpvex.ui.player.controls.components.SeekbarWithTimers
-import app.marlboroadvance.mpvex.ui.player.controls.components.SlideToUnlock
 import app.marlboroadvance.mpvex.ui.player.controls.components.SpeedControlSlider
 import app.marlboroadvance.mpvex.ui.player.controls.components.TextPlayerUpdate
 import app.marlboroadvance.mpvex.ui.player.controls.components.VolumeSlider
@@ -235,20 +234,14 @@ fun PlayerControls(
     appearancePreferences.parseButtons(portraitBottomControlsPref, mutableSetOf())
   }
 
-  var isUnlockSliderDragging by remember { mutableStateOf(false) }
-
   LaunchedEffect(
     controlsShown,
     paused,
     isSeeking,
     resetControlsTimestamp,
-    areControlsLocked,
-    isUnlockSliderDragging,
   ) {
-    if (controlsShown && paused == false && !isSeeking && !isUnlockSliderDragging) {
-      // Use 2 second delay when controls are locked, otherwise use user preference
-      val delayTime = if (areControlsLocked) 2000L else playerTimeToDisappear.toLong()
-      delay(delayTime)
+    if (controlsShown && paused == false && !isSeeking) {
+      delay(playerTimeToDisappear.toLong())
       viewModel.hideControls()
     }
   }
@@ -597,15 +590,24 @@ fun PlayerControls(
           exit = fadeOut(),
           modifier =
             Modifier
+              .then(
+                if (showSystemStatusBar) {
+                  Modifier.windowInsetsPadding(WindowInsets.statusBars)
+                } else {
+                  Modifier
+                }
+              )
               .constrainAs(unlockControlsButton) {
-                bottom.linkTo(parent.bottom, spacing.extraLarge)
-                start.linkTo(parent.start)
-                end.linkTo(parent.end)
+                // Lock button in the top corner; pushed down in portrait so it
+                // clears the status bar area
+                top.linkTo(parent.top, if (isPortrait) spacing.extraLarge else spacing.small)
+                start.linkTo(parent.start, spacing.large)
               },
         ) {
-          SlideToUnlock(
-            onUnlock = { viewModel.unlockControls() },
-            onDraggingChanged = { isDragging -> isUnlockSliderDragging = isDragging },
+          ControlsButton(
+            Icons.Filled.Lock,
+            onClick = { viewModel.unlockControls() },
+            color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
           )
         }
 
