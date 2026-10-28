@@ -216,15 +216,17 @@ class FolderListViewModel(
       .map { it.fileName }
   }
 
-  /** Drop cached i/n + thumbnails and re-resolve (called on screen resume). */
+  /** Re-resolve pins, keeping the previous entry visible until the new one lands. */
   fun refreshPinnedProgress() {
-    _pinnedProgress.value = emptyMap()
+    val currentKeys = _pinnedNetworkFolders.value.map { it.progressKey() }.toSet()
     _pinnedNetworkFolders.value.forEach { folder ->
       viewModelScope.launch(Dispatchers.IO) {
         val progress = resolvePinProgress(folder) ?: return@launch
         _pinnedProgress.update { it + (folder.progressKey() to progress) }
       }
     }
+    // Drop entries for pins that no longer exist
+    _pinnedProgress.update { it.filterKeys { key -> key in currentKeys } }
   }
 
   private suspend fun resolvePinThumbnail(

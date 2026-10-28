@@ -1272,7 +1272,7 @@ private fun PinnedNetworkFoldersSection(
       modifier = Modifier.fillMaxWidth(),
     ) {
       items(folders) { folder ->
-        val pinProgress = progress["${folder.connectionId}:${folder.path}"]
+        val pinProgress = progress[folder.progressKey()]
         // Adaptive card size: ~2 cards per screen on phones AND tablets
         val screenWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
         val cardWidth = ((screenWidth * 0.45f).dp).coerceIn(180.dp, 300.dp)
@@ -1317,6 +1317,26 @@ private fun PinnedNetworkFoldersSection(
                   .background(MaterialTheme.colorScheme.surfaceContainerHigh),
               )
             }
+            // Progress chip pinned to the card's top-right corner —
+            // independent of the thumbnail.
+            if (pinProgress != null && pinProgress.totalCount > 0) {
+              Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                  .align(Alignment.TopEnd)
+                  .padding(6.dp),
+              ) {
+                Text(
+                  text = "${pinProgress.currentIndex}/${pinProgress.totalCount}",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onPrimary,
+                  maxLines = 1,
+                  softWrap = false,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+              }
+            }
             Column(
               modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -1327,42 +1347,23 @@ private fun PinnedNetworkFoldersSection(
                 text = folder.name,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
               )
               Spacer(modifier = Modifier.height(4.dp))
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                  text = folder.connectionName,
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                  modifier = Modifier.weight(1f),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                // Progress chip — always visible; the connection name truncates first
-                if (pinProgress != null && pinProgress.totalCount > 0) {
-                  Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                  ) {
-                    Text(
-                      text = "${pinProgress.currentIndex}/${pinProgress.totalCount}",
-                      style = MaterialTheme.typography.labelSmall,
-                      color = MaterialTheme.colorScheme.onPrimary,
-                      maxLines = 1,
-                      softWrap = false,
-                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                    )
-                  }
-                }
-              }
+              Text(
+                text = folder.connectionName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
             }
           }
-
         }
       }
+
     }
   }
 }
