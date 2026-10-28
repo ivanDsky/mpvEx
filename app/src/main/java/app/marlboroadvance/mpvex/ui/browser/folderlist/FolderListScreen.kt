@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.lazy.LazyRow
@@ -25,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -85,6 +88,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -1280,64 +1284,77 @@ private fun PinnedNetworkFoldersSection(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
           ),
         ) {
-          Column(modifier = Modifier.padding(12.dp)) {
-            // Thumbnail square (current episode frame) — kept separate from
-            // the progress indicator.
-            Box(
-              modifier = Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(8.dp)),
-              contentAlignment = Alignment.Center,
-            ) {
-              val currentBitmap = pinProgress?.thumbnail
-              if (currentBitmap != null) {
-                Image(
-                  bitmap = currentBitmap.asImageBitmap(),
-                  contentDescription = null,
-                  contentScale = ContentScale.Crop,
-                  modifier = Modifier.size(32.dp),
-                )
-              } else {
-                Icon(
-                  imageVector = Icons.Filled.Folder,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(32.dp),
-                )
-              }
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(min = 96.dp),
+          ) {
+            // Episode frame as the card background, dimmed for legibility
+            val currentBitmap = pinProgress?.thumbnail
+            if (currentBitmap != null) {
+              Image(
+                bitmap = currentBitmap.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+              )
+              Box(
+                modifier = Modifier
+                  .matchParentSize()
+                  .background(Color.Black.copy(alpha = 0.35f)),
+              )
+            } else {
+              Box(
+                modifier = Modifier
+                  .matchParentSize()
+                  .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+              )
+              Icon(
+                imageVector = Icons.Filled.Folder,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                modifier = Modifier
+                  .align(Alignment.Center)
+                  .size(32.dp),
+              )
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            // Progress square — independent of the thumbnail
-            if (pinProgress != null && pinProgress.totalCount > 0) {
-              Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = MaterialTheme.colorScheme.primary,
-              ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+              Text(
+                text = folder.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Spacer(modifier = Modifier.height(4.dp))
+              Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                  text = "${pinProgress.currentIndex}/${pinProgress.totalCount}",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = MaterialTheme.colorScheme.onPrimary,
+                  text = folder.connectionName,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
                   maxLines = 1,
-                  softWrap = false,
-                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                  overflow = TextOverflow.Ellipsis,
+                  modifier = Modifier.weight(1f),
                 )
+                Spacer(modifier = Modifier.width(6.dp))
+                // Progress chip — always visible; the connection name truncates first
+                if (pinProgress != null && pinProgress.totalCount > 0) {
+                  Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                  ) {
+                    Text(
+                      text = "${pinProgress.currentIndex}/${pinProgress.totalCount}",
+                      style = MaterialTheme.typography.labelSmall,
+                      color = MaterialTheme.colorScheme.onPrimary,
+                      maxLines = 1,
+                      softWrap = false,
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                  }
+                }
               }
-              Spacer(modifier = Modifier.height(6.dp))
             }
-            Text(
-              text = folder.name,
-              style = MaterialTheme.typography.bodyMedium,
-              fontWeight = FontWeight.Bold,
-              maxLines = 2,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-              text = folder.connectionName,
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
           }
 
         }
