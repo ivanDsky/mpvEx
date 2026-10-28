@@ -179,17 +179,22 @@ class FolderListViewModel(
    */
   fun continuePinnedPlaylist(folder: PinnedNetworkFolder) {
     viewModelScope.launch {
-      val connection = networkRepository.getConnectionById(folder.connectionId) ?: return@launch
-      val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return@launch
-      val videos = NetworkFolderQueue.orderedVideos(listing)
-      if (videos.isEmpty()) return@launch
+      val connection = networkRepository.getConnectionById(folder.connectionId)
+      val listing = connection?.let { networkRepository.listFiles(connection, folder.path).getOrNull() }
+      val videos = listing?.let { NetworkFolderQueue.orderedVideos(it) }
+      if (connection == null || videos.isNullOrEmpty()) {
+        Log.e(TAG, "Cannot continue playlist for ${folder.name}: folder not reachable")
+        return@launch
+      }
 
       val recentNames =
         app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps
           .getRecentlyPlayed(limit = 50)
           .map { it.fileName }
       val target = videos[NetworkFolderQueue.resumeIndex(videos, recentNames)]
-      playbackStarter.play(folder.connectionId, target)
+      playbackStarter
+        .play(folder.connectionId, target, listing)
+        .onFailure { e -> Log.e(TAG, "Failed to start playback for ${folder.name}", e) }
     }
   }
 

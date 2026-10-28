@@ -6,6 +6,7 @@ import android.net.Uri
 import app.marlboroadvance.mpvex.domain.network.NetworkConnection
 import app.marlboroadvance.mpvex.domain.network.NetworkFile
 import app.marlboroadvance.mpvex.domain.network.NetworkFolderQueue
+import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
 import app.marlboroadvance.mpvex.repository.NetworkRepository
 import app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,7 @@ class NetworkPlaybackStarter(
   suspend fun play(
     connectionId: Long,
     file: NetworkFile,
+    listing: List<NetworkFile>? = null,
   ): Result<Unit> =
     withContext(Dispatchers.Main) {
       runCatching {
@@ -38,8 +40,8 @@ class NetworkPlaybackStarter(
         var queueIndex = 0
         if (useProxy) {
           val parentPath = file.path.substringBeforeLast("/", missingDelimiterValue = "")
-          val listing = repository.listFiles(connection, parentPath).getOrNull()
-          val plan = listing?.let { NetworkFolderQueue.plan(it, file.path) }
+          val folderListing = listing ?: repository.listFiles(connection, parentPath).getOrNull()
+          val plan = folderListing?.let { NetworkFolderQueue.plan(it, file.path) }
           if (plan != null) {
             val proxy = NetworkStreamingProxy.getInstance()
             val timestamp = System.currentTimeMillis()
@@ -112,9 +114,9 @@ class NetworkPlaybackStarter(
   companion object {
     // Protocols that require proxy server for seeking support
     private val PROXY_PROTOCOLS = setOf(
-      app.marlboroadvance.mpvex.domain.network.NetworkProtocol.SMB,
-      app.marlboroadvance.mpvex.domain.network.NetworkProtocol.FTP,
-      app.marlboroadvance.mpvex.domain.network.NetworkProtocol.WEBDAV,
+      NetworkProtocol.SMB,
+      NetworkProtocol.FTP,
+      NetworkProtocol.WEBDAV,
     )
   }
 }
