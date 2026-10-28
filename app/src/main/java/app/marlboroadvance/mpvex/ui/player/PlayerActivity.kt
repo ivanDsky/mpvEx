@@ -231,6 +231,20 @@ class PlayerActivity :
   // Periodic position save while playing, so progress/i-n stay current
   // without waiting for a pause.
   private val periodicSaveHandler = android.os.Handler(android.os.Looper.getMainLooper())
+  private fun captureNetworkFrameForHistory() {
+    if (currentNetworkFilePath == null || currentNetworkConnectionId == -1L) return
+    runCatching {
+      app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
+        .get(applicationContext, playbackStarter)
+        .put(
+          currentNetworkConnectionId,
+          currentNetworkFilePath!!,
+          MPVLib.grabThumbnail(512) ?: return,
+        )
+      Log.d(TAG, "Captured network frame for thumbnail cache: $currentNetworkFilePath")
+    }
+  }
+
   private val periodicSaveRunnable =
     object : Runnable {
       override fun run() {
@@ -239,15 +253,7 @@ class PlayerActivity :
 
           // Capture the current frame for the network file's thumbnail —
           // cached now, so nothing needs fetching on startup.
-          if (currentNetworkFilePath != null && currentNetworkConnectionId != -1L) {
-            runCatching {
-              MPVLib.grabThumbnail(512)?.let { frame ->
-                app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
-                  .get(applicationContext, playbackStarter)
-                  .put(currentNetworkConnectionId, currentNetworkFilePath!!, frame)
-              }
-            }
-          }
+          captureNetworkFrameForHistory()
         }
         periodicSaveHandler.postDelayed(this, POSITION_SAVE_INTERVAL_MS)
       }
@@ -718,6 +724,7 @@ savePlaybackStateJob?.let { job ->
       // When finishing, do it synchronously so database is updated before MainActivity resumes
       if (!isInPip || isFinishing || isUserFinishing) {
         saveVideoPlaybackState(fileName, isSync = isFinishing || isUserFinishing)
+        captureNetworkFrameForHistory()
       }
 
       // OPTIMIZATION: Stop playback immediately if finishing to reduce cleanup overhead

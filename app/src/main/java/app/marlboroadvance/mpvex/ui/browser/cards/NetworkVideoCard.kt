@@ -106,7 +106,7 @@ fun NetworkVideoCard(
             modifier = Modifier.size(thumbSizeDp),
           )
         } else {
-          // Play icon overlay
+          // Play icon while the frame loads / when no frame is available
           Icon(
             Icons.Filled.PlayArrow,
             contentDescription = "Play",
