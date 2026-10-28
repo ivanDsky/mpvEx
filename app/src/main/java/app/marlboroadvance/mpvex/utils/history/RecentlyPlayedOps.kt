@@ -90,14 +90,21 @@ object RecentlyPlayedOps {
     repository.updateVideoMetadata(filePath, videoTitle, duration, fileSize, width, height)
   }
 
+  /** Dead loopback proxy URLs recorded by pre-fix builds — never replayable. */
+  private fun isDeadProxyUrl(path: String): Boolean =
+    runCatching {
+      val host = Uri.parse(path).host?.lowercase()
+      host != null &&
+        path.startsWith("http", ignoreCase = true) &&
+        host in listOf("127.0.0.1", "localhost", "0.0.0.0")
+    }.getOrDefault(false)
+
   suspend fun getLastPlayed(): String? {
     return withContext(Dispatchers.IO) {
       val recent = kotlin.runCatching { repository.getRecentlyPlayed(limit = 50) }.getOrDefault(emptyList())
       for (entity in recent) {
         val path = entity.filePath
-        val uri = runCatching { Uri.parse(path) }.getOrNull()
-        // Dead proxy URLs from old builds can never replay — drop them.
-        if (uri?.host in listOf("127.0.0.1", "localhost", "0.0.0.0")) {
+        if (isDeadProxyUrl(path)) {
           runCatching { repository.deleteByFilePath(path) }
           continue
         }
@@ -119,8 +126,7 @@ object RecentlyPlayedOps {
       val recent = kotlin.runCatching { repository.getRecentlyPlayed(limit = 50) }.getOrDefault(emptyList())
       for (entity in recent) {
         val path = entity.filePath
-        val uri = runCatching { Uri.parse(path) }.getOrNull()
-        if (uri?.host in listOf("127.0.0.1", "localhost", "0.0.0.0")) {
+        if (isDeadProxyUrl(path)) {
           runCatching { repository.deleteByFilePath(path) }
           continue
         }

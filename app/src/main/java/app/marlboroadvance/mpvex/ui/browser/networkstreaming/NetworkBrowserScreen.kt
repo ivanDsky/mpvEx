@@ -336,7 +336,9 @@ private fun NetworkBrowserContent(
                 connection?.let { conn ->
                   var thumbnail by remember(video.path) { mutableStateOf<android.graphics.Bitmap?>(null) }
                   LaunchedEffect(video.path) {
-                    val positionSec = resumePositionSeconds(video) ?: 2.0
+                    val positionSec =
+                      resumePositionSeconds(video)
+                        ?: NetworkThumbnailCache.DEFAULT_POSITION_SECONDS
                     thumbnail = thumbnailCache.getOrLoad(conn, video, positionSec)
                   }
                   NetworkVideoCard(

@@ -3085,9 +3085,14 @@ class PlayerActivity :
 
     // Track the current network identity so history, progress and subtitles
     // follow the playlist item actually playing (not the launch intent's).
-    NetworkRecent.parse(uri.toString())?.let { ref ->
-      currentNetworkConnectionId = ref.connectionId
-      currentNetworkFilePath = ref.path
+    // A local item clears it.
+    val networkRef = NetworkRecent.parse(uri.toString())
+    if (networkRef != null) {
+      currentNetworkConnectionId = networkRef.connectionId
+      currentNetworkFilePath = networkRef.path
+    } else {
+      currentNetworkConnectionId = -1L
+      currentNetworkFilePath = null
     }
 
     // Set HTTP headers (including referer) for network streams

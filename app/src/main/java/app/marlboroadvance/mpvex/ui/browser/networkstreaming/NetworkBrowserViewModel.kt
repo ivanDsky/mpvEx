@@ -72,10 +72,14 @@ class NetworkBrowserViewModel(
     }
   }
 
-  /** Saved resume position of a network file in seconds, or null when unwatched. */
+  /**
+   * Saved resume position of an IN-PROGRESS network file in seconds, or null
+   * when unwatched or fully watched (their thumbnails stay at start-of-file).
+   */
   fun resumePositionSeconds(file: NetworkFile): Double? {
     val state = _playbackStates.value[NetworkRecent.playbackKey(connectionId, file.path)] ?: return null
-    return state.lastPosition.takeIf { it > 0 }?.toDouble()
+    if (state.lastPosition <= 0 || state.timeRemaining <= 0) return null
+    return state.lastPosition.toDouble()
   }
 
   /** Watched fraction (0f..1f exclusive) of a network file, or null when unwatched/finished. */

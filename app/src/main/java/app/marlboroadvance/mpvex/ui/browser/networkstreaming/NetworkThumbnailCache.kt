@@ -119,7 +119,8 @@ class NetworkThumbnailCache private constructor(
   companion object {
     private const val DIMENSION = 256
     private const val JPEG_QUALITY = 85
-    private const val PREFERRED_POSITION_SECONDS = 2.0
+    const val DEFAULT_POSITION_SECONDS = 2.0
+    private const val PREFERRED_POSITION_SECONDS = DEFAULT_POSITION_SECONDS
     private const val DISK_CACHE_BYTES = 64L * 1024 * 1024
 
     @Volatile
