@@ -39,6 +39,7 @@ class NetworkBrowserViewModel(
 
   private val pinnedFolderRepository: PinnedFolderRepository by inject()
   private val playbackStarter: NetworkPlaybackStarter by inject()
+  private val thumbnailCache: NetworkThumbnailCache by inject()
   private val playbackStateRepository: PlaybackStateRepository by inject()
 
   private val _files = MutableStateFlow<List<NetworkFile>>(emptyList())
@@ -50,6 +51,14 @@ class NetworkBrowserViewModel(
   /** Playback states for network files, keyed by [NetworkRecent.playbackKey]. */
   private val _playbackStates =
     MutableStateFlow<Map<String, PlaybackStateEntity>>(emptyMap())
+
+  /** Bumped when cached thumbnails should be re-read (e.g. after playback). */
+  private val _thumbnailRefreshKey = MutableStateFlow(0)
+  val thumbnailRefreshKey: StateFlow<Int> = _thumbnailRefreshKey.asStateFlow()
+
+  fun refreshThumbnails() {
+    _thumbnailRefreshKey.value += 1
+  }
 
   init {
     viewModelScope.launch {
@@ -87,6 +96,14 @@ class NetworkBrowserViewModel(
     // Any started episode shows its bar — even a thin one — so "I'm in the
     // middle" is visible; fully watched episodes stay clean.
     return fraction.takeIf { it < 0.99f }
+  }
+
+  /** Cached frame, or extract at the file's saved/first position through the starter. */
+  suspend fun thumbnailFor(file: NetworkFile): android.graphics.Bitmap? {
+    val positionSec = resumePositionSeconds(file)
+      ?: NetworkThumbnailCache.DEFAULT_POSITION_SECONDS
+    thumbnailCache.cached(connectionId, file.path, positionSec)?.let { return it }
+    return playbackStarter.extractFrameById(connectionId, file, positionSec)
   }
 
   /** Saved resume position of an in-progress network file in seconds. */

@@ -94,6 +94,43 @@ class NetworkPlaybackStarter(
   )
 
   /**
+   * Extract a preview frame from a network file by connection id at
+   * [positionSec] seconds through the streaming proxy. Null when the
+   * connection or extraction fails.
+   */
+  suspend fun extractFrameById(
+    connectionId: Long,
+    file: NetworkFile,
+    positionSec: Double,
+    dimension: Int = 512,
+  ): android.graphics.Bitmap? {
+    val connection = repository.getConnectionById(connectionId) ?: return null
+    return extractFrame(connection, file, positionSec, dimension)
+  }
+
+  suspend fun extractFrame(
+    connection: NetworkConnection,
+    file: NetworkFile,
+    positionSec: Double,
+    dimension: Int = 512,
+  ): android.graphics.Bitmap? =
+    withContext(Dispatchers.IO) {
+      val stream = registerOneOffStream(connection, file)
+      try {
+        runCatching {
+          `is`.xyz.mpv.FastThumbnails.generateAsync(
+            stream.url,
+            positionSec,
+            dimension,
+            useHwDec = false,
+          )
+        }.getOrNull()
+      } finally {
+        unregisterStream(stream.streamId)
+      }
+    }
+
+  /**
    * Register a file with the streaming proxy for a one-off read (e.g.
    * thumbnail extraction). Pair with [unregisterStream] when done —
    * the stream deliberately stays registered for the URL to keep working.

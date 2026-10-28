@@ -237,7 +237,7 @@ class PlayerActivity :
       runCatching { MPVLib.getPropertyInt("time-pos")?.toDouble() }.getOrNull() ?: return
     val frame = runCatching { MPVLib.grabThumbnail(512) }.getOrNull() ?: return
     app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
-      .get(applicationContext, playbackStarter)
+      .get(applicationContext)
       .put(
         connectionId = currentNetworkConnectionId,
         path = currentNetworkFilePath!!,

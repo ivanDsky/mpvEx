@@ -115,7 +115,9 @@ fun NetworkVideoCard(
           )
         }
         // Watched progress bar along the thumbnail bottom
+        // (drawn width floors at 4% so just-started episodes are visibly "started")
         if (progressPercentage != null && progressPercentage > 0f) {
+          val drawnWidth = progressPercentage.coerceAtLeast(0.04f)
           Box(
             modifier =
               Modifier

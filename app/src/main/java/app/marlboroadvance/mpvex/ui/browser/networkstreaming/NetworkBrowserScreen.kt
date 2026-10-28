@@ -78,6 +78,7 @@ data class NetworkBrowserScreen(
     val error by viewModel.error.collectAsState()
     val pinnedPaths by viewModel.pinnedPaths.collectAsState()
     val thumbnailCache = org.koin.compose.koinInject<NetworkThumbnailCache>()
+    val thumbnailRefreshKey by viewModel.thumbnailRefreshKey.collectAsState()
     var pinSheetFolder by remember { mutableStateOf<NetworkFile?>(null) }
 
     // Watch progress can change while the player was up — refresh on resume
@@ -156,6 +157,7 @@ data class NetworkBrowserScreen(
         thumbnailCache = thumbnailCache,
         progressFraction = { file -> viewModel.progressFraction(file) },
         resumePositionSeconds = { file -> viewModel.resumePositionSeconds(file) },
+        thumbnailRefreshKey = thumbnailRefreshKey,
         modifier = Modifier.padding(padding),
       )
 
@@ -205,6 +207,7 @@ private fun NetworkBrowserContent(
   thumbnailCache: NetworkThumbnailCache,
   progressFraction: (NetworkFile) -> Float?,
   resumePositionSeconds: (NetworkFile) -> Double?,
+  thumbnailRefreshKey: Int,
   modifier: Modifier = Modifier,
 ) {
   // Load connection details
@@ -348,10 +351,10 @@ private fun NetworkBrowserContent(
                 connection?.let { conn ->
                   var thumbnail by remember(video.path) { mutableStateOf<android.graphics.Bitmap?>(null) }
                   var thumbnailReady by remember(video.path) { mutableStateOf(false) }
-                  LaunchedEffect(video.path) {
+                  LaunchedEffect(video.path, thumbnailRefreshKey) {
                     val positionSec = resumePositionSeconds(video)
                       ?: NetworkThumbnailCache.DEFAULT_POSITION_SECONDS
-                    thumbnail = thumbnailCache.getOrLoad(conn, video, positionSec)
+                    thumbnail = thumbnailCache.cached(conn.id, video.path, positionSec)
                   }
                   NetworkVideoCard(
                     file = video,

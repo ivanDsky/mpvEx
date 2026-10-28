@@ -551,7 +551,6 @@ val DatabaseModule =
     single {
       app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache.get(
         androidContext(),
-        get(),
       )
     }
 

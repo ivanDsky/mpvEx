@@ -247,9 +247,7 @@ class FolderListViewModel(
         ?.takeIf { it > 0 }
         ?.toDouble()
         ?: app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache.DEFAULT_POSITION_SECONDS
-    return app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
-      .get(getApplication(), playbackStarter)
-      .getOrLoad(connection, target, positionSec)
+    return playbackStarter.extractFrameById(folder.connectionId, target, positionSec)
   }
 
   private suspend fun resolvePinProgress(folder: PinnedNetworkFolder): PinProgress? {
@@ -284,7 +282,7 @@ class FolderListViewModel(
         ?: app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache.DEFAULT_POSITION_SECONDS
     val thumbnail =
       app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
-        .get(getApplication(), playbackStarter)
+        .get(getApplication())
         .cached(folder.connectionId, target.path, positionSec)
 
     val result = PinProgress(currentIndex = index + 1, totalCount = videos.size, thumbnail = thumbnail, positionSec = positionSec)
@@ -293,9 +291,8 @@ class FolderListViewModel(
     // extract at the saved position in the background and swap in.
     if (thumbnail == null) {
       viewModelScope.launch(Dispatchers.IO) {
-        app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
-          .get(getApplication(), playbackStarter)
-          .getOrLoad(connection, target, positionSec)
+        playbackStarter
+          .extractFrameById(folder.connectionId, target, positionSec)
           ?.let { bitmap ->
             _pinnedProgress.update { it + (folder.progressKey() to result.copy(thumbnail = bitmap)) }
           }

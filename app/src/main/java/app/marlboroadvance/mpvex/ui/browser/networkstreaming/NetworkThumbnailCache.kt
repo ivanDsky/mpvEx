@@ -5,13 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Bitmap.CompressFormat
 import android.util.LruCache
-import app.marlboroadvance.mpvex.domain.network.NetworkConnection
-import app.marlboroadvance.mpvex.domain.network.NetworkFile
-import `is`.xyz.mpv.FastThumbnails
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -22,19 +15,18 @@ import java.io.File
  * position for in-progress ones), and grabs the player takes DURING
  * playback at the watched position (which override extractions).
  *
- * Positions are bucketed (30 s) so a frame captured near where you stopped
- * counts as a hit; watching further on re-extracts at the new bucket.
+ * Keys include a 30 s position bucket, so a frame captured near where you
+ * stopped counts as a hit; watching further re-extracts at the new bucket.
  * Reads are memory/disk only — nothing here touches the network on startup.
+ * Extraction lives in [NetworkPlaybackStarter.extractFrame].
  */
-class NetworkThumbnailCache private constructor(
+class NetworkThumbnailCache internal constructor(
   private val context: Context,
-  private val playbackStarter: NetworkPlaybackStarter,
 ) {
   private val memoryCache =
     object : LruCache<String, Bitmap>(8 * 1024 * 1024) {
       override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
-  private val extractMutex = Mutex()
 
   /** Cached frame for [positionSec], if any (memory or disk). */
   fun cached(
@@ -55,37 +47,6 @@ class NetworkThumbnailCache private constructor(
     memoryCache.put(memoryKey(connectionId, path, positionSec), bitmap)
     writeToDisk(connectionId, path, positionSec, bitmap)
   }
-
-  /**
-   * Cached frame, or extract one through the streaming proxy at
-   * [positionSec] (serialized so a big folder can't hammer the server).
-   */
-  suspend fun getOrLoad(
-    connection: NetworkConnection,
-    file: NetworkFile,
-    positionSec: Double = DEFAULT_POSITION_SECONDS,
-  ): Bitmap? =
-    withContext(Dispatchers.IO) {
-      cached(connection.id, file.path, positionSec)?.let { return@withContext it }
-
-      extractMutex.withLock {
-        cached(connection.id, file.path, positionSec)?.let { return@withContext it }
-
-        val stream = playbackStarter.registerOneOffStream(connection, file)
-        val bitmap =
-          runCatching {
-            FastThumbnails.generateAsync(
-              stream.url,
-              positionSec,
-              DIMENSION,
-              useHwDec = false,
-            )
-          }.getOrNull()
-        bitmap?.let { put(connection.id, file.path, it, positionSec) }
-        playbackStarter.unregisterStream(stream.streamId)
-        bitmap
-      }
-    }
 
   private fun positionBucket(positionSec: Double): Int =
     (positionSec / POSITION_BUCKET_SECONDS).toInt()
@@ -118,7 +79,9 @@ class NetworkThumbnailCache private constructor(
     bitmap: Bitmap,
   ) {
     runCatching {
-      diskFile(connectionId, path, positionSec).outputStream().use { out ->
+      val target = diskFile(connectionId, path, positionSec)
+      target.parentFile?.mkdirs()
+      target.outputStream().use { out ->
         bitmap.compress(CompressFormat.JPEG, JPEG_QUALITY, out)
       }
     }
@@ -143,21 +106,17 @@ class NetworkThumbnailCache private constructor(
   }
 
   companion object {
-    private const val DIMENSION = 512
     private const val JPEG_QUALITY = 85
-    const val DEFAULT_POSITION_SECONDS = 2.0
     private const val POSITION_BUCKET_SECONDS = 30
     private const val DISK_CACHE_BYTES = 64L * 1024 * 1024
+    const val DEFAULT_POSITION_SECONDS = 2.0
 
     @Volatile
     private var instance: NetworkThumbnailCache? = null
 
-    fun get(
-      context: Context,
-      playbackStarter: NetworkPlaybackStarter,
-    ): NetworkThumbnailCache =
+    fun get(context: Context): NetworkThumbnailCache =
       instance ?: synchronized(this) {
-        instance ?: NetworkThumbnailCache(context.applicationContext, playbackStarter).also { instance = it }
+        instance ?: NetworkThumbnailCache(context.applicationContext).also { instance = it }
       }
   }
 }
