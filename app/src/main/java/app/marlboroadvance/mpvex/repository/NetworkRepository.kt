@@ -211,8 +211,9 @@ class NetworkRepository(
         existingClient
       }
 
-      // List files
-      client.listFiles(path)
+      // List files; servers occasionally return duplicate entry names in one
+      // listing, which crashes path-keyed LazyColumns — collapse them here.
+      client.listFiles(path).mapCatching { deduplicated(it) }
     } catch (e: Exception) {
       Result.failure(e)
     }
@@ -247,5 +248,13 @@ class NetworkRepository(
     status: ConnectionStatus,
   ) {
     _connectionStatuses.value += (connectionId to status)
+  }
+
+  companion object {
+    /**
+     * Collapse a listing to unique paths, keeping the first occurrence of each.
+     */
+    fun deduplicated(files: List<NetworkFile>): List<NetworkFile> =
+      files.distinctBy { it.path }
   }
 }

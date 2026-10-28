@@ -109,6 +109,10 @@ android {
     buildConfig = true
   }
 
+  testOptions {
+    unitTests.isReturnDefaultValues = true
+  }
+
   packaging {
     resources {
       excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -222,6 +226,8 @@ dependencies {
   implementation(libs.nanohttpd)
   implementation(libs.lazycolumnscrollbar)
   implementation(libs.reorderable)
+
+  testImplementation("junit:junit:4.13.2")
 }
 
 /* ---------------- Git helpers ---------------- */
