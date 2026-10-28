@@ -46,6 +46,28 @@ class NetworkFolderQueueTest {
   }
 
   @Test
+  fun `resume index points at the most recently played sibling`() {
+    val siblings =
+      listOf(
+        entry("Episode 1"),
+        entry("Episode 2"),
+        entry("Episode 3"),
+      )
+
+    val index = NetworkFolderQueue.resumeIndex(siblings, recentNames = listOf("Episode 2.mp4"))
+
+    assertEquals(1, index)
+  }
+
+  @Test
+  fun `resume index falls back to the first sibling when nothing was played`() {
+    val siblings = listOf(entry("Episode 1"), entry("Episode 2"))
+
+    assertEquals(0, NetworkFolderQueue.resumeIndex(siblings, recentNames = emptyList()))
+    assertEquals(0, NetworkFolderQueue.resumeIndex(siblings, recentNames = listOf("Other Show.mkv")))
+  }
+
+  @Test
   fun `plan is null when the current video is the only one`() {
     val listing =
       listOf(

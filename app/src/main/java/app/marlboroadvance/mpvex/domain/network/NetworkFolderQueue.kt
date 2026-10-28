@@ -19,19 +19,42 @@ object NetworkFolderQueue {
    * files only, natural name order. Returns null when there is nothing to
    * queue (the current video is alone, or missing from the listing).
    */
+  /**
+   * The folder's video files in queue order (natural name order).
+   */
+  fun orderedVideos(listing: List<NetworkFile>): List<NetworkFile> =
+    listing
+      .filter { !it.isDirectory && it.isVideoEntry() }
+      .sortedWith { a, b -> SortUtils.NaturalOrderComparator.DEFAULT.compare(a.name, b.name) }
+
   fun plan(
     listing: List<NetworkFile>,
     currentPath: String,
   ): Plan? {
-    val videos =
-      listing
-        .filter { !it.isDirectory && it.isVideoEntry() }
-        .sortedWith { a, b -> SortUtils.NaturalOrderComparator.DEFAULT.compare(a.name, b.name) }
+    val videos = orderedVideos(listing)
 
     val index = videos.indexOfFirst { it.path == currentPath }
     if (videos.size <= 1 || index == -1) return null
 
     return Plan(siblings = videos, currentIndex = index)
+  }
+
+  /**
+   * Index of the episode to resume a folder from: the most recently played
+   * sibling (matched by file name against [recentNames], newest first), or
+   * the first sibling when nothing in this folder was played yet.
+   */
+  fun resumeIndex(
+    siblings: List<NetworkFile>,
+    recentNames: List<String>,
+  ): Int {
+    fun normalize(name: String) = name.substringBeforeLast('.', name).lowercase()
+
+    recentNames.forEach { recent ->
+      val match = siblings.indexOfFirst { normalize(it.name) == normalize(recent) }
+      if (match != -1) return match
+    }
+    return 0
   }
 
   /**

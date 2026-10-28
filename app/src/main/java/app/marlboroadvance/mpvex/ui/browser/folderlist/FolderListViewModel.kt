@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.marlboroadvance.mpvex.database.repository.VideoMetadataCacheRepository
 import app.marlboroadvance.mpvex.domain.media.model.VideoFolder
+import app.marlboroadvance.mpvex.domain.network.NetworkFolderQueue
 import app.marlboroadvance.mpvex.domain.playbackstate.repository.PlaybackStateRepository
 import app.marlboroadvance.mpvex.repository.MediaFileRepository
 import app.marlboroadvance.mpvex.preferences.AppearancePreferences
@@ -52,6 +53,7 @@ class FolderListViewModel(
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val pinnedFolderRepository: app.marlboroadvance.mpvex.database.repository.PinnedFolderRepository by inject()
   private val networkRepository: app.marlboroadvance.mpvex.repository.NetworkRepository by inject()
+  private val playbackStarter: app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkPlaybackStarter by inject()
 
   private val _allVideoFolders = MutableStateFlow<List<VideoFolder>>(emptyList())
   private val _videoFolders = MutableStateFlow<List<VideoFolder>>(emptyList())
@@ -170,10 +172,24 @@ class FolderListViewModel(
     }
   }
 
-  /** Remove a network folder from the Home shelf. */
-  fun unpinNetworkFolder(folder: PinnedNetworkFolder) {
+  /**
+   * Continue a pinned folder's playlist: play the most recently played
+   * episode at its saved position, with the rest of the folder queued.
+   * Long-press opens the folder browser instead; unpin lives there.
+   */
+  fun continuePinnedPlaylist(folder: PinnedNetworkFolder) {
     viewModelScope.launch {
-      pinnedFolderRepository.unpin(folder.connectionId, folder.path)
+      val connection = networkRepository.getConnectionById(folder.connectionId) ?: return@launch
+      val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return@launch
+      val videos = NetworkFolderQueue.orderedVideos(listing)
+      if (videos.isEmpty()) return@launch
+
+      val recentNames =
+        app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps
+          .getRecentlyPlayed(limit = 50)
+          .map { it.fileName }
+      val target = videos[NetworkFolderQueue.resumeIndex(videos, recentNames)]
+      playbackStarter.play(folder.connectionId, target)
     }
   }
 

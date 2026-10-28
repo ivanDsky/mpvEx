@@ -542,6 +542,13 @@ val DatabaseModule =
     }
 
     single {
+      app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkPlaybackStarter(
+        application = androidContext() as android.app.Application,
+        repository = get(),
+      )
+    }
+
+    single {
       PlaylistRepository(
         playlistDao = get<MpvExDatabase>().playlistDao(),
       )

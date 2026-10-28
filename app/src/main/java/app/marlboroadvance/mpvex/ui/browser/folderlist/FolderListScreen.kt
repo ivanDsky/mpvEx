@@ -524,7 +524,8 @@ object FolderListScreen : Screen {
           val pinnedNetworkFolders by viewModel.pinnedNetworkFolders.collectAsState()
           PinnedNetworkFoldersSection(
             folders = pinnedNetworkFolders,
-            onFolderClick = { folder ->
+            onFolderClick = { viewModel.continuePinnedPlaylist(it) },
+            onFolderLongClick = { folder ->
               backstack.add(
                 app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkBrowserScreen(
                   connectionId = folder.connectionId,
@@ -533,7 +534,6 @@ object FolderListScreen : Screen {
                 ),
               )
             },
-            onUnpin = { viewModel.unpinNetworkFolder(it) },
           )
           Box(modifier = Modifier.weight(1f)) {
                         when (permissionState.status) {
@@ -1230,7 +1230,7 @@ private suspend fun searchFoldersAndVideos(
 private fun PinnedNetworkFoldersSection(
   folders: List<app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder>,
   onFolderClick: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
-  onUnpin: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
+  onFolderLongClick: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
 ) {
   if (folders.isEmpty()) return
 
@@ -1247,13 +1247,12 @@ private fun PinnedNetworkFoldersSection(
       modifier = Modifier.fillMaxWidth(),
     ) {
       items(folders) { folder ->
-        var showUnpinMenu by remember { mutableStateOf(false) }
         Card(
           modifier = Modifier
             .width(140.dp)
             .combinedClickable(
               onClick = { onFolderClick(folder) },
-              onLongClick = { showUnpinMenu = true },
+              onLongClick = { onFolderLongClick(folder) },
             ),
           colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -1282,24 +1281,6 @@ private fun PinnedNetworkFoldersSection(
               overflow = TextOverflow.Ellipsis,
             )
           }
-        }
-        if (showUnpinMenu) {
-          AlertDialog(
-            onDismissRequest = { showUnpinMenu = false },
-            title = { Text(folder.name) },
-            text = { Text("Remove this folder from the Home tab?") },
-            confirmButton = {
-              TextButton(
-                onClick = {
-                  onUnpin(folder)
-                  showUnpinMenu = false
-                },
-              ) { Text("Unpin from Home") }
-            },
-            dismissButton = {
-              TextButton(onClick = { showUnpinMenu = false }) { Text("Cancel") }
-            },
-          )
         }
       }
     }
