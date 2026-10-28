@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.Image
+import androidx.compose.material3.Surface
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.Card
@@ -83,6 +85,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -522,8 +525,10 @@ object FolderListScreen : Screen {
       Box(modifier = Modifier.padding(padding)) {
         Column(modifier = Modifier.fillMaxSize()) {
           val pinnedNetworkFolders by viewModel.pinnedNetworkFolders.collectAsState()
+          val pinnedProgress by viewModel.pinnedProgress.collectAsState()
           PinnedNetworkFoldersSection(
             folders = pinnedNetworkFolders,
+            progress = pinnedProgress,
             onFolderClick = { viewModel.continuePinnedPlaylist(it) },
             onFolderLongClick = { folder ->
               backstack.add(
@@ -1229,6 +1234,7 @@ private suspend fun searchFoldersAndVideos(
 @Composable
 private fun PinnedNetworkFoldersSection(
   folders: List<app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder>,
+  progress: Map<String, app.marlboroadvance.mpvex.ui.browser.folderlist.FolderListViewModel.PinProgress>,
   onFolderClick: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
   onFolderLongClick: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
 ) {
@@ -1247,6 +1253,7 @@ private fun PinnedNetworkFoldersSection(
       modifier = Modifier.fillMaxWidth(),
     ) {
       items(folders) { folder ->
+        val pinProgress = progress["${folder.connectionId}:${folder.path}"]
         Card(
           modifier = Modifier
             .width(140.dp)
@@ -1259,12 +1266,38 @@ private fun PinnedNetworkFoldersSection(
           ),
         ) {
           Column(modifier = Modifier.padding(12.dp)) {
-            Icon(
-              imageVector = Icons.Filled.Folder,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.primary,
-              modifier = Modifier.size(32.dp),
-            )
+            Box(modifier = Modifier.size(32.dp)) {
+              val currentBitmap = pinProgress?.thumbnail
+              if (currentBitmap != null) {
+                Image(
+                  bitmap = currentBitmap.asImageBitmap(),
+                  contentDescription = null,
+                  modifier = Modifier.size(32.dp),
+                )
+              } else {
+                Icon(
+                  imageVector = Icons.Filled.Folder,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.primary,
+                  modifier = Modifier.size(32.dp),
+                )
+              }
+              // Position badge: "i/n" — where you are in the folder
+              if (pinProgress != null && pinProgress.totalCount > 0) {
+                Surface(
+                  shape = RoundedCornerShape(6.dp),
+                  color = MaterialTheme.colorScheme.primary,
+                  modifier = Modifier.align(Alignment.TopEnd),
+                ) {
+                  Text(
+                    text = "${pinProgress.currentIndex}/${pinProgress.totalCount}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                  )
+                }
+              }
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
               text = folder.name,

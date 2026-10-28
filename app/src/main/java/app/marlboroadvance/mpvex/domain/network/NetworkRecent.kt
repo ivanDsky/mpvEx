@@ -43,6 +43,16 @@ object NetworkRecent {
     val fileName: String,
   )
 
+  /**
+   * The playback-state key the player uses for a network file
+   * ("network_<connectionId>_<pathHash>") — single source of truth for
+   * save/restore/history matching.
+   */
+  fun playbackKey(
+    connectionId: Long,
+    path: String,
+  ): String = "network_${connectionId}_${path.hashCode()}"
+
   /** Inverse of [recentPath]; null when [filePath] is not a network-recent URI. */
   fun parse(filePath: String): Ref? =
     runCatching {

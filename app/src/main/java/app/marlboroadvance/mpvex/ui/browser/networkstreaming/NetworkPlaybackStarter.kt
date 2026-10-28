@@ -8,6 +8,7 @@ import app.marlboroadvance.mpvex.domain.network.NetworkFile
 import app.marlboroadvance.mpvex.domain.network.NetworkFolderQueue
 import app.marlboroadvance.mpvex.domain.network.NetworkRecent
 import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
+import android.graphics.Bitmap
 import app.marlboroadvance.mpvex.repository.NetworkRepository
 import app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy
 import kotlinx.coroutines.Dispatchers
@@ -87,6 +88,29 @@ class NetworkPlaybackStarter(
         application.startActivity(intent)
       }
     }
+
+  /**
+   * Register a file with the streaming proxy for a one-off read (e.g.
+   * thumbnail extraction) and hand the local URL to [block]. The stream
+   * stays registered — extraction results are cached by the caller.
+   */
+  suspend fun withRegisteredStream(
+    connection: NetworkConnection,
+    file: NetworkFile,
+    block: suspend (url: String) -> Bitmap?,
+  ): Bitmap? {
+    val proxy = NetworkStreamingProxy.getInstance()
+    val streamId = "thumb_${connection.id}_${file.path.hashCode()}"
+    val url =
+      proxy.registerStream(
+        streamId = streamId,
+        connection = connection,
+        filePath = file.path,
+        fileSize = if (file.size > 0) file.size else -1L,
+        mimeType = file.mimeType ?: "video/mp4",
+      )
+    return block(url)
+  }
 
   /**
    * Register a file with the streaming proxy and return its playback URI.

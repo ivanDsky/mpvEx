@@ -65,6 +65,16 @@ class FolderListViewModel(
   private val _pinnedNetworkFolders = MutableStateFlow<List<PinnedNetworkFolder>>(emptyList())
   val pinnedNetworkFolders: StateFlow<List<PinnedNetworkFolder>> = _pinnedNetworkFolders.asStateFlow()
 
+  /** Per-pin position ("i of n") and current-episode frame, keyed "connectionId:path". */
+  data class PinProgress(
+    val currentIndex: Int,
+    val totalCount: Int,
+    val thumbnail: android.graphics.Bitmap?,
+  )
+
+  private val _pinnedProgress = MutableStateFlow<Map<String, PinProgress>>(emptyMap())
+  val pinnedProgress: StateFlow<Map<String, PinProgress>> = _pinnedProgress.asStateFlow()
+
   // Only show loading on fresh install (when there's no cached data)
   private val _isLoading = MutableStateFlow(false)
   val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -115,7 +125,20 @@ class FolderListViewModel(
             PinnedNetworkFolder(connection.id, connection.name, pin.path, pin.name)
           }
         }
-      }.collect { _pinnedNetworkFolders.value = it }
+      }.collect { folders ->
+        _pinnedNetworkFolders.value = folders
+        // Resolve i/n + current-episode frame for pins we haven't yet.
+        folders
+          .map { "${it.connectionId}:${it.path}" }
+          .filter { it !in _pinnedProgress.value }
+          .forEach { key ->
+            val folder = folders.first { "${it.connectionId}:${it.path}" == key }
+            viewModelScope.launch(Dispatchers.IO) {
+              val progress = resolvePinProgress(folder) ?: return@launch
+              _pinnedProgress.value = _pinnedProgress.value + (key to progress)
+            }
+          }
+      }
     }
 
     // Load cached folders instantly for immediate display
@@ -170,6 +193,30 @@ class FolderListViewModel(
         }
       }
     }
+  }
+
+  private suspend fun resolvePinProgress(folder: PinnedNetworkFolder): PinProgress? {
+    val connection = networkRepository.getConnectionById(folder.connectionId) ?: return null
+    val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return null
+    val videos = NetworkFolderQueue.orderedVideos(listing)
+    if (videos.isEmpty()) return PinProgress(currentIndex = 0, totalCount = 0, thumbnail = null)
+
+    // Only history entries that live inside this pinned folder, so another
+    // show's identically-named episode can't hijack the position.
+    val folderPrefix =
+      app.marlboroadvance.mpvex.domain.network.NetworkRecent
+        .recentPath(folder.connectionId, folder.path) + "/"
+    val recentNames =
+      app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps
+        .getRecentlyPlayed(limit = 50)
+        .filter { it.filePath.startsWith(folderPrefix) }
+        .map { it.fileName }
+    val index = NetworkFolderQueue.resumeIndex(videos, recentNames)
+    val thumbnail =
+      app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
+        .get(getApplication(), playbackStarter)
+        .getOrLoad(connection, videos[index], 256)
+    return PinProgress(currentIndex = index + 1, totalCount = videos.size, thumbnail = thumbnail)
   }
 
   /**

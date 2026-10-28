@@ -1,6 +1,8 @@
 package app.marlboroadvance.mpvex.ui.browser.cards
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,6 +49,8 @@ fun NetworkVideoCard(
   modifier: Modifier = Modifier,
   onLongClick: (() -> Unit)? = null,
   isSelected: Boolean = false,
+  thumbnail: android.graphics.Bitmap? = null,
+  progressPercentage: Float? = null,
 ) {
   val appearancePreferences = koinInject<AppearancePreferences>()
   val browserPreferences = koinInject<BrowserPreferences>()
@@ -92,13 +97,40 @@ fun NetworkVideoCard(
             ),
         contentAlignment = Alignment.Center,
       ) {
-        // Play icon overlay
-        Icon(
-          Icons.Filled.PlayArrow,
-          contentDescription = "Play",
-          modifier = Modifier.size(48.dp),
-          tint = MaterialTheme.colorScheme.secondary,
-        )
+        if (thumbnail != null) {
+          Image(
+            bitmap = thumbnail.asImageBitmap(),
+            contentDescription = file.name,
+            modifier = Modifier.size(thumbSizeDp),
+          )
+        } else {
+          // Play icon overlay
+          Icon(
+            Icons.Filled.PlayArrow,
+            contentDescription = "Play",
+            modifier = Modifier.size(48.dp),
+            tint = MaterialTheme.colorScheme.secondary,
+          )
+        }
+        // Watched progress bar along the thumbnail bottom
+        if (progressPercentage != null && progressPercentage > 0f) {
+          Box(
+            modifier =
+              Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .height(3.dp)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+          ) {
+            Box(
+              modifier =
+                Modifier
+                  .fillMaxWidth(progressPercentage.coerceIn(0f, 1f))
+                  .fillMaxHeight()
+                  .background(MaterialTheme.colorScheme.primary),
+            )
+          }
+        }
       }
       Spacer(modifier = Modifier.width(16.dp))
       Column(

@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import app.marlboroadvance.mpvex.domain.network.NetworkConnection
 import app.marlboroadvance.mpvex.domain.network.NetworkFile
 import app.marlboroadvance.mpvex.database.repository.PinnedFolderRepository
+import app.marlboroadvance.mpvex.domain.network.NetworkRecent
 import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
 import app.marlboroadvance.mpvex.repository.NetworkRepository
 import app.marlboroadvance.mpvex.utils.sort.SortUtils
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -36,12 +38,17 @@ class NetworkBrowserViewModel(
 
   private val pinnedFolderRepository: PinnedFolderRepository by inject()
   private val playbackStarter: NetworkPlaybackStarter by inject()
+  private val playbackStateRepository: app.marlboroadvance.mpvex.domain.playbackstate.repository.PlaybackStateRepository by inject()
 
   private val _files = MutableStateFlow<List<NetworkFile>>(emptyList())
   val files: StateFlow<List<NetworkFile>> = _files.asStateFlow()
 
   private val _pinnedPaths = MutableStateFlow<Set<String>>(emptySet())
   val pinnedPaths: StateFlow<Set<String>> = _pinnedPaths.asStateFlow()
+
+  /** Playback states for network files, keyed by [NetworkRecent.playbackKey]. */
+  private val _playbackStates = MutableStateFlow<Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>>(emptyMap())
+  val playbackStates: StateFlow<Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>> = _playbackStates.asStateFlow()
 
   init {
     viewModelScope.launch {
@@ -50,6 +57,24 @@ class NetworkBrowserViewModel(
         .map { pins -> pins.map { it.path }.toSet() }
         .collect { _pinnedPaths.value = it }
     }
+
+    // Watch progress for the visible listing; refreshed on each load.
+    viewModelScope.launch {
+      playbackStateRepository
+        .getAllPlaybackStates()
+        .filter { it.mediaTitle.startsWith("network_") }
+        .associateBy { it.mediaTitle }
+        .let { _playbackStates.value = it }
+    }
+  }
+
+  /** Watched fraction (0f..1f) of a network file, or null when unwatched. */
+  fun progressFraction(file: NetworkFile): Float? {
+    val state = _playbackStates.value[NetworkRecent.playbackKey(connectionId, file.path)] ?: return null
+    if (state.lastPosition <= 0) return null
+    val total = state.lastPosition + state.timeRemaining
+    if (total <= 0) return if (state.hasBeenWatched) 1f else null
+    return (state.lastPosition.toFloat() / total).coerceIn(0f, 1f)
   }
 
   /** Pin a folder to Home, or unpin it if already pinned. */

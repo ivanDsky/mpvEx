@@ -37,6 +37,7 @@ import app.marlboroadvance.mpvex.database.dao.NetworkConnectionDao
 import app.marlboroadvance.mpvex.domain.network.NetworkConnection
 import app.marlboroadvance.mpvex.domain.network.NetworkFile
 import app.marlboroadvance.mpvex.preferences.preference.collectAsState
+import app.marlboroadvance.mpvex.domain.network.NetworkRecent
 import app.marlboroadvance.mpvex.presentation.Screen
 import app.marlboroadvance.mpvex.presentation.components.pullrefresh.PullRefreshBox
 import app.marlboroadvance.mpvex.ui.browser.cards.NetworkFolderCard
@@ -76,6 +77,8 @@ data class NetworkBrowserScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val pinnedPaths by viewModel.pinnedPaths.collectAsState()
+    val playbackStates by viewModel.playbackStates.collectAsState()
+    val thumbnailCache = org.koin.compose.koinInject<NetworkThumbnailCache>()
     var pinSheetFolder by remember { mutableStateOf<NetworkFile?>(null) }
 
     // UI State
@@ -139,6 +142,8 @@ data class NetworkBrowserScreen(
         onVideoClick = { video ->
           viewModel.playVideo(video)
         },
+        playbackStates = playbackStates,
+        thumbnailCache = thumbnailCache,
         modifier = Modifier.padding(padding),
       )
 
@@ -185,6 +190,8 @@ private fun NetworkBrowserContent(
   onFolderClick: (NetworkFile) -> Unit,
   onFolderLongClick: (NetworkFile) -> Unit,
   onVideoClick: (NetworkFile) -> Unit,
+  playbackStates: Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>,
+  thumbnailCache: NetworkThumbnailCache,
   modifier: Modifier = Modifier,
 ) {
   // Load connection details
@@ -326,10 +333,30 @@ private fun NetworkBrowserContent(
               ) { video ->
                 // Only show card if connection is loaded
                 connection?.let { conn ->
+                  var thumbnail by remember(video.path) {
+                    mutableStateOf(thumbnailCache.cached(connectionId, video, 256))
+                  }
+                  LaunchedEffect(video.path) {
+                    if (thumbnail == null) {
+                      thumbnail = thumbnailCache.getOrLoad(conn, video, 256)
+                    }
+                  }
+                  val progressPercentage =
+                    playbackStates[NetworkRecent.playbackKey(connectionId, video.path)]?.let { state ->
+                      when {
+                        state.lastPosition <= 0 -> null
+                        state.timeRemaining <= 0 -> 1f
+                        else ->
+                          (state.lastPosition.toFloat() / (state.lastPosition + state.timeRemaining))
+                            .coerceIn(0f, 1f)
+                      }
+                    }
                   NetworkVideoCard(
                     file = video,
                     connection = conn,
                     onClick = { onVideoClick(video) },
+                    thumbnail = thumbnail,
+                    progressPercentage = progressPercentage,
                     modifier = Modifier,
                   )
                 }

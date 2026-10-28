@@ -3401,7 +3401,7 @@ class PlayerActivity :
 
     if (networkFilePath != null && networkConnectionId != -1L) {
       // For network files via proxy: use connection ID + file path for stable identifier
-      val identifier = "network_${networkConnectionId}_${networkFilePath.hashCode()}"
+      val identifier = NetworkRecent.playbackKey(networkConnectionId, networkFilePath)
       Log.d(
         TAG,
         "Using network file identifier: $identifier (connection: $networkConnectionId, path: $networkFilePath)",
@@ -3446,7 +3446,7 @@ class PlayerActivity :
         app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy.getInstance().getStreamInfo(it)
       }
       if (info != null) {
-        return "network_${info.connection.id}_${info.filePath.hashCode()}"
+        return NetworkRecent.playbackKey(info.connection.id, info.filePath)
       }
     }
     return if (uri.scheme?.startsWith("http") == true || uri.scheme == "rtmp" || uri.scheme == "ftp" || uri.scheme == "rtsp" || uri.scheme == "mms") {

@@ -40,6 +40,13 @@ class NetworkRecentTest {
   }
 
   @Test
+  fun `playback key matches the player identifier format`() {
+    val path = "Movies/Episode 2.mp4"
+
+    assertEquals("network_3_${path.hashCode()}", NetworkRecent.playbackKey(3, path))
+  }
+
+  @Test
   fun `non network uris do not parse`() {
     assertNull(NetworkRecent.parse("http://127.0.0.1:1234/1_123/ep1.mp4"))
     assertNull(NetworkRecent.parse("/storage/emulated/0/movie.mp4"))
