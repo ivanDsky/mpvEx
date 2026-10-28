@@ -229,16 +229,10 @@ dependencies {
   implementation(libs.lazycolumnscrollbar)
   implementation(libs.reorderable)
 
-<<<<<<< HEAD
   testImplementation(libs.junit)
   testImplementation(libs.robolectric)
   testImplementation(libs.androidx.test.core)
   testImplementation(libs.kotlinx.coroutines.test)
-=======
-  testImplementation("junit:junit:4.13.2")
-  testImplementation("org.robolectric:robolectric:4.16")
-  testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
->>>>>>> e731cd8 (feat(settings): add show subtitles by default toggle)
 }
 
 /* ---------------- Git helpers ---------------- */

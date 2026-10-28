@@ -1276,7 +1276,7 @@ private fun PinnedNetworkFoldersSection(
         // Adaptive card size: ~2 cards per screen on phones AND tablets
         val screenWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
         val cardWidth = ((screenWidth * 0.45f).dp).coerceIn(180.dp, 300.dp)
-        val cardHeight = cardWidth * 0.92f
+        val cardHeight = cardWidth * 0.65f
         Card(
           modifier = Modifier
             .width(cardWidth)
@@ -1317,7 +1317,12 @@ private fun PinnedNetworkFoldersSection(
                   .background(MaterialTheme.colorScheme.surfaceContainerHigh),
               )
             }
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(
+              modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(12.dp),
+            ) {
               Text(
                 text = folder.name,
                 style = MaterialTheme.typography.bodyMedium,
