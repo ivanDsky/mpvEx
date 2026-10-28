@@ -233,16 +233,18 @@ class PlayerActivity :
   private val periodicSaveHandler = android.os.Handler(android.os.Looper.getMainLooper())
   private fun captureNetworkFrameForHistory() {
     if (currentNetworkFilePath == null || currentNetworkConnectionId == -1L) return
-    runCatching {
-      app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
-        .get(applicationContext, playbackStarter)
-        .put(
-          currentNetworkConnectionId,
-          currentNetworkFilePath!!,
-          MPVLib.grabThumbnail(512) ?: return,
-        )
-      Log.d(TAG, "Captured network frame for thumbnail cache: $currentNetworkFilePath")
-    }
+    val positionSec =
+      runCatching { MPVLib.getPropertyInt("time-pos")?.toDouble() }.getOrNull() ?: return
+    val frame = runCatching { MPVLib.grabThumbnail(512) }.getOrNull() ?: return
+    app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
+      .get(applicationContext, playbackStarter)
+      .put(
+        connectionId = currentNetworkConnectionId,
+        path = currentNetworkFilePath!!,
+        bitmap = frame,
+        positionSec = positionSec,
+      )
+    Log.d(TAG, "Captured network frame for thumbnail cache: $currentNetworkFilePath @$positionSec s")
   }
 
   private val periodicSaveRunnable =

@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Bitmap.CompressFormat
-import android.net.Uri
 import android.util.LruCache
 import app.marlboroadvance.mpvex.domain.network.NetworkConnection
 import app.marlboroadvance.mpvex.domain.network.NetworkFile
@@ -18,12 +17,13 @@ import java.io.File
 /**
  * Frame store for network files.
  *
- * Two sources feed it:
- * - extraction through the streaming proxy (first frames, fast even on
- *   large files) for episodes never played;
- * - frame grabs taken by the player DURING playback, which land at the
- *   watched position and override the first-frame entry.
+ * Frames come from two sources: extraction through the streaming proxy at a
+ * requested position (first frame for unwatched episodes, the saved resume
+ * position for in-progress ones), and grabs the player takes DURING
+ * playback at the watched position (which override extractions).
  *
+ * Positions are bucketed (30 s) so a frame captured near where you stopped
+ * counts as a hit; watching further on re-extracts at the new bucket.
  * Reads are memory/disk only — nothing here touches the network on startup.
  */
 class NetworkThumbnailCache private constructor(
@@ -36,20 +36,24 @@ class NetworkThumbnailCache private constructor(
     }
   private val extractMutex = Mutex()
 
-  /** Cached frame, if any (memory or disk) — never touches the network. */
+  /** Cached frame for [positionSec], if any (memory or disk). */
   fun cached(
     connectionId: Long,
     path: String,
-  ): Bitmap? = memoryCache.get(memoryKey(connectionId, path)) ?: loadFromDisk(connectionId, path)
+    positionSec: Double = DEFAULT_POSITION_SECONDS,
+  ): Bitmap? =
+    memoryCache.get(memoryKey(connectionId, path, positionSec))
+      ?: loadFromDisk(connectionId, path, positionSec)
 
-  /** Store a frame (e.g. grabbed by the player during playback). */
+  /** Store a frame captured/extracted at [positionSec]. */
   fun put(
     connectionId: Long,
     path: String,
     bitmap: Bitmap,
+    positionSec: Double = DEFAULT_POSITION_SECONDS,
   ) {
-    memoryCache.put(memoryKey(connectionId, path), bitmap)
-    writeToDisk(connectionId, path, bitmap)
+    memoryCache.put(memoryKey(connectionId, path, positionSec), bitmap)
+    writeToDisk(connectionId, path, positionSec, bitmap)
   }
 
   /**
@@ -62,10 +66,10 @@ class NetworkThumbnailCache private constructor(
     positionSec: Double = DEFAULT_POSITION_SECONDS,
   ): Bitmap? =
     withContext(Dispatchers.IO) {
-      cached(connection.id, file.path)?.let { return@withContext it }
+      cached(connection.id, file.path, positionSec)?.let { return@withContext it }
 
       extractMutex.withLock {
-        cached(connection.id, file.path)?.let { return@withContext it }
+        cached(connection.id, file.path, positionSec)?.let { return@withContext it }
 
         val stream = playbackStarter.registerOneOffStream(connection, file)
         val bitmap =
@@ -77,37 +81,44 @@ class NetworkThumbnailCache private constructor(
               useHwDec = false,
             )
           }.getOrNull()
-        bitmap?.let { put(connection.id, file.path, it) }
+        bitmap?.let { put(connection.id, file.path, it, positionSec) }
         playbackStarter.unregisterStream(stream.streamId)
         bitmap
       }
     }
 
+  private fun positionBucket(positionSec: Double): Int =
+    (positionSec / POSITION_BUCKET_SECONDS).toInt()
+
   private fun memoryKey(
     connectionId: Long,
     path: String,
-  ): String = "$connectionId|$path"
+    positionSec: Double,
+  ): String = "$connectionId|$path|${positionBucket(positionSec)}"
 
   private fun diskFile(
     connectionId: Long,
     path: String,
-  ): File = File(File(context.cacheDir, "network_thumbs"), "${connectionId}_${path.hashCode()}.jpg")
+    positionSec: Double,
+  ): File = File(File(context.cacheDir, "network_thumbs"), "${connectionId}_${path.hashCode()}_p${positionBucket(positionSec)}.jpg")
 
   private fun loadFromDisk(
     connectionId: Long,
     path: String,
+    positionSec: Double,
   ): Bitmap? =
     runCatching {
-      diskFile(connectionId, path).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.absolutePath) }
+      diskFile(connectionId, path, positionSec).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.absolutePath) }
     }.getOrNull()
 
   private fun writeToDisk(
     connectionId: Long,
     path: String,
+    positionSec: Double,
     bitmap: Bitmap,
   ) {
     runCatching {
-      diskFile(connectionId, path).outputStream().use { out ->
+      diskFile(connectionId, path, positionSec).outputStream().use { out ->
         bitmap.compress(CompressFormat.JPEG, JPEG_QUALITY, out)
       }
     }
@@ -132,9 +143,10 @@ class NetworkThumbnailCache private constructor(
   }
 
   companion object {
-    private const val DIMENSION = 256
+    private const val DIMENSION = 512
     private const val JPEG_QUALITY = 85
     const val DEFAULT_POSITION_SECONDS = 2.0
+    private const val POSITION_BUCKET_SECONDS = 30
     private const val DISK_CACHE_BYTES = 64L * 1024 * 1024
 
     @Volatile
