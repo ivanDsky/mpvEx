@@ -18,7 +18,7 @@ object SortUtils {
     files.sortedWith(
       compareBy<NetworkFile> { !it.isDirectory }
         .thenByDescending { it.lastModified }
-        .thenBy { it.name.lowercase() },
+        .thenComparator { a, b -> NaturalOrderComparator.DEFAULT.compare(a.name, b.name) },
     )
 
   /**

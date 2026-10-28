@@ -5,11 +5,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Seam: network browser listing order.
- *
- * The browser shows directories first, each group with the most recently
- * modified entries first; equal timestamps break ties alphabetically so the
- * order is deterministic.
+ * Network browser listing order: directories first, most recently modified
+ * first within each group, natural-order name tie-break.
  */
 class SortUtilsNetworkTest {
   private fun file(
@@ -44,6 +41,19 @@ class SortUtilsNetworkTest {
     val sorted = SortUtils.sortNetworkFiles(listing)
 
     assertEquals(listOf("New", "Old", "new.mp4", "old.mp4"), sorted.map { it.name })
+  }
+
+  @Test
+  fun `numeric names tie-break naturally`() {
+    val listing =
+      listOf(
+        file("Episode 10", isDirectory = true, lastModified = 100),
+        file("Episode 2", isDirectory = true, lastModified = 100),
+      )
+
+    val sorted = SortUtils.sortNetworkFiles(listing)
+
+    assertEquals(listOf("Episode 2", "Episode 10"), sorted.map { it.name })
   }
 
   @Test
