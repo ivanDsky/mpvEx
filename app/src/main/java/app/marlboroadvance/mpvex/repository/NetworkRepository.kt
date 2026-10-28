@@ -213,7 +213,7 @@ class NetworkRepository(
 
       // List files; servers occasionally return duplicate entry names in one
       // listing, which crashes path-keyed LazyColumns — collapse them here.
-      client.listFiles(path).mapCatching { deduplicated(it) }
+      client.listFiles(path).map { deduplicated(it) }
     } catch (e: Exception) {
       Result.failure(e)
     }

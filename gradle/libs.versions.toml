@@ -1,5 +1,6 @@
 [versions]
 agp = "9.4.0"
+junit = "4.13.2"
 commonsNet = "3.13.0"
 smbj = "0.14.0"
 kotlin = "2.3.20"
@@ -20,6 +21,7 @@ mpv-android = "1.0.0"
 mediainfo-android = "1.0.2"
 
 [libraries]
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 commons-net = { module = "commons-net:commons-net", version.ref = "commonsNet" }

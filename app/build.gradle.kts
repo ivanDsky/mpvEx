@@ -109,9 +109,6 @@ android {
     buildConfig = true
   }
 
-  testOptions {
-    unitTests.isReturnDefaultValues = true
-  }
 
   packaging {
     resources {
@@ -227,7 +224,7 @@ dependencies {
   implementation(libs.lazycolumnscrollbar)
   implementation(libs.reorderable)
 
-  testImplementation("junit:junit:4.13.2")
+  testImplementation(libs.junit)
 }
 
 /* ---------------- Git helpers ---------------- */
