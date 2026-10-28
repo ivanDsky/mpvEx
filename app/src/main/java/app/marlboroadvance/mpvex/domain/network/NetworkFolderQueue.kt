@@ -1,6 +1,8 @@
 package app.marlboroadvance.mpvex.domain.network
 
 import app.marlboroadvance.mpvex.utils.sort.SortUtils
+import app.marlboroadvance.mpvex.utils.storage.FileTypeUtils
+import java.util.Locale
 
 /**
  * Builds the folder queue for network playback, mirroring local behavior where
@@ -23,7 +25,7 @@ object NetworkFolderQueue {
   ): Plan? {
     val videos =
       listing
-        .filter { !it.isDirectory && it.mimeType?.startsWith("video/") == true }
+        .filter { !it.isDirectory && it.isVideoEntry() }
         .sortedWith { a, b -> SortUtils.NaturalOrderComparator.DEFAULT.compare(a.name, b.name) }
 
     val index = videos.indexOfFirst { it.path == currentPath }
@@ -31,4 +33,13 @@ object NetworkFolderQueue {
 
     return Plan(siblings = videos, currentIndex = index)
   }
+
+  /**
+   * Mirror local folder playlists (extension detection, so servers that
+   * report no or coarse mime types still queue), plus accept an explicit
+   * video mime type for extension-less entries.
+   */
+  private fun NetworkFile.isVideoEntry(): Boolean =
+    FileTypeUtils.isVideoExtension(name.substringAfterLast('.', "").lowercase(Locale.getDefault())) ||
+      mimeType?.startsWith("video/") == true
 }

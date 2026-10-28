@@ -3420,6 +3420,18 @@ class PlayerActivity :
    * For network URIs (http/https/rtmp/etc.), uses a hash of the URI string to distinguish different streams.
    */
   private fun getMediaIdentifierFromUri(uri: Uri, fileName: String): String {
+    // Proxy-streamed playlist items: resolve the stream back to its connection
+    // and real file path so resume keys match directly-launched network files
+    // and stay stable across sessions (proxy ports and ids are per-launch).
+    if (uri.host == "127.0.0.1") {
+      val streamId = uri.path?.trim('/')?.substringBefore('/')
+      val info = streamId?.let {
+        app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy.getInstance().getStreamInfo(it)
+      }
+      if (info != null) {
+        return "network_${info.connection.id}_${info.filePath.hashCode()}"
+      }
+    }
     return if (uri.scheme?.startsWith("http") == true || uri.scheme == "rtmp" || uri.scheme == "ftp" || uri.scheme == "rtsp" || uri.scheme == "mms") {
       "${fileName}_${uri.toString().hashCode()}"
     } else {

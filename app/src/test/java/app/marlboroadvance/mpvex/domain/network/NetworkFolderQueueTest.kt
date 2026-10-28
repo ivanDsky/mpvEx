@@ -32,6 +32,20 @@ class NetworkFolderQueueTest {
   }
 
   @Test
+  fun `videos are detected by extension like local folders, even without a mime type`() {
+    val listing =
+      listOf(
+        entry("Episode 1.rmvb", mime = null),
+        entry("Episode 2.vob", mime = null),
+        entry("cover.jpg", mime = null),
+      )
+
+    val plan = NetworkFolderQueue.plan(listing, currentPath = "Show/Episode 1.rmvb")!!
+
+    assertEquals(listOf("Episode 1.rmvb", "Episode 2.vob"), plan.siblings.map { it.name })
+  }
+
+  @Test
   fun `plan is null when the current video is the only one`() {
     val listing =
       listOf(

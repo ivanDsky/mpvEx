@@ -90,6 +90,12 @@ class NetworkStreamingProxy private constructor() : NanoHTTPD("127.0.0.1", 0) {
   }
 
   /**
+   * Look up a registered stream (e.g. to resolve a playback URI back to its
+   * stable connection + file path identity).
+   */
+  fun getStreamInfo(streamId: String): StreamInfo? = activeStreams[streamId]
+
+  /**
    * Unregister a stream
    */
   fun unregisterStream(streamId: String) {
