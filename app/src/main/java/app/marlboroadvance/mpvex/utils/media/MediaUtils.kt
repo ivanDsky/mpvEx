@@ -127,9 +127,6 @@ object MediaUtils : KoinComponent {
     context.startActivity(intent)
   }
 
-  /**
-   * @deprecated Use RecentlyPlayedOps.getLastPlayed() directly
-   */
   /** History identity for a recently-played network file, if [source] is one. */
   private fun networkRecentEntry(source: Any): NetworkRecent.Ref? =
     when (source) {
@@ -170,6 +167,9 @@ object MediaUtils : KoinComponent {
     }
   }
 
+  /**
+   * @deprecated Use RecentlyPlayedOps.getLastPlayed() directly
+   */
   suspend fun getRecentlyPlayedFile(): String? = RecentlyPlayedOps.getLastPlayed()
 
   /**

@@ -210,6 +210,17 @@ class FolderListViewModel(
       .map { it.fileName }
   }
 
+  /** Drop cached i/n + thumbnails and re-resolve (called on screen resume). */
+  fun refreshPinnedProgress() {
+    _pinnedProgress.value = emptyMap()
+    _pinnedNetworkFolders.value.forEach { folder ->
+      viewModelScope.launch(Dispatchers.IO) {
+        val progress = resolvePinProgress(folder) ?: return@launch
+        _pinnedProgress.update { it + (folder.progressKey() to progress) }
+      }
+    }
+  }
+
   private suspend fun resolvePinProgress(folder: PinnedNetworkFolder): PinProgress? {
     val connection = networkRepository.getConnectionById(folder.connectionId) ?: return null
     val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return null
@@ -240,16 +251,7 @@ class FolderListViewModel(
         return@launch
       }
 
-      // Only history entries that live inside this pinned folder, so another
-      // show's identically-named episode can't hijack the resume target.
-      val folderPrefix =
-        app.marlboroadvance.mpvex.domain.network.NetworkRecent
-          .recentPath(folder.connectionId, folder.path) + "/"
-      val recentNames =
-        app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps
-          .getRecentlyPlayed(limit = 50)
-          .filter { it.filePath.startsWith(folderPrefix) }
-          .map { it.fileName }
+      val recentNames = folderScopedRecentNames(folder)
       val target = videos[NetworkFolderQueue.resumeIndex(videos, recentNames)]
       playbackStarter
         .play(folder.connectionId, target, listing)

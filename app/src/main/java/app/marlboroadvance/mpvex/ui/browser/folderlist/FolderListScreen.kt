@@ -529,6 +529,7 @@ object FolderListScreen : Screen {
           PinnedNetworkFoldersSection(
             folders = pinnedNetworkFolders,
             progress = pinnedProgress,
+            onRefreshProgress = { viewModel.refreshPinnedProgress() },
             onFolderClick = { viewModel.continuePinnedPlaylist(it) },
             onFolderLongClick = { folder ->
               backstack.add(
@@ -1235,10 +1236,23 @@ private suspend fun searchFoldersAndVideos(
 private fun PinnedNetworkFoldersSection(
   folders: List<app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder>,
   progress: Map<String, app.marlboroadvance.mpvex.ui.browser.folderlist.FolderListViewModel.PinProgress>,
+  onRefreshProgress: () -> Unit,
   onFolderClick: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
   onFolderLongClick: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
 ) {
   if (folders.isEmpty()) return
+
+  val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+  androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+    val observer =
+      androidx.lifecycle.LifecycleEventObserver { _, event ->
+        if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+          onRefreshProgress()
+        }
+      }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
 
   Column(modifier = Modifier.fillMaxWidth()) {
     Text(
