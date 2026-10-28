@@ -1,5 +1,7 @@
 package app.marlboroadvance.mpvex.utils.media
 
+import android.util.Log
+import android.widget.Toast
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -65,6 +67,13 @@ object MediaUtils : KoinComponent {
     val uri =
       when (source) {
         is Video -> {
+          // Network history entries: resolve the stable identity back to a
+          // live proxy stream and launch with the folder queue.
+          val networkRecent = NetworkRecent.parse(source.uri.toString())
+          if (networkRecent != null) {
+            playNetworkRecent(context, networkRecent)
+            return
+          }
           val intent = Intent(Intent.ACTION_VIEW, source.uri)
           intent.setClass(context, PlayerActivity::class.java)
           intent.putExtra("internal_launch", true) // Enables subtitle autoload
@@ -86,17 +95,7 @@ object MediaUtils : KoinComponent {
           // live proxy stream and launch with the folder queue.
           val networkRecent = NetworkRecent.parse(source)
           if (networkRecent != null) {
-            CoroutineScope(Dispatchers.Main).launch {
-              playbackStarter.play(
-                networkRecent.connectionId,
-                NetworkFile(
-                  name = networkRecent.fileName,
-                  path = networkRecent.path,
-                  size = 0,
-                  isDirectory = false,
-                ),
-              )
-            }
+            playNetworkRecent(context, networkRecent)
             return
           }
           // Handle file paths with # characters properly
@@ -149,6 +148,30 @@ object MediaUtils : KoinComponent {
         "app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps",
       ),
   )
+  private fun playNetworkRecent(
+    context: Context,
+    recent: app.marlboroadvance.mpvex.domain.network.NetworkRecent.Ref,
+  ) {
+    CoroutineScope(Dispatchers.Main).launch {
+      playbackStarter
+        .play(
+          recent.connectionId,
+          NetworkFile(
+            name = recent.fileName,
+            path = recent.path,
+            size = -1L, // unknown; the proxy resolves it from the server
+            isDirectory = false,
+          ),
+        )
+        .onFailure { e ->
+          Log.e("MediaUtils", "Failed to resume network file: ${recent.path}", e)
+          android.widget.Toast
+            .makeText(context, "Playback failed: ${e.message}", Toast.LENGTH_LONG)
+            .show()
+        }
+    }
+  }
+
   suspend fun getRecentlyPlayedFile(): String? = RecentlyPlayedOps.getLastPlayed()
 
   /**

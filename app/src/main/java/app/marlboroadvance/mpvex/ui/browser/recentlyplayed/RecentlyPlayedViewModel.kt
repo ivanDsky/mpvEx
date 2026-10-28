@@ -121,11 +121,15 @@ class RecentlyPlayedViewModel(application: Application) : AndroidViewModel(appli
       for ((filePath, timestamp) in standaloneVideos) {
         val entity = allRecentEntities.find { it.filePath == filePath }
 
-        // Check if this is a network URL
+        // Check if this is a network URL (incl. pinned-folder history entries)
         val isNetworkUri = filePath.startsWith("http://", ignoreCase = true) ||
           filePath.startsWith("https://", ignoreCase = true) ||
           filePath.startsWith("rtmp://", ignoreCase = true) ||
-          filePath.startsWith("rtsp://", ignoreCase = true)
+          filePath.startsWith("rtsp://", ignoreCase = true) ||
+          filePath.startsWith(
+            app.marlboroadvance.mpvex.domain.network.NetworkRecent.SCHEME + "://",
+            ignoreCase = true,
+          )
 
         // Skip any kind of streaming playlist entries
         if (isStreamingPlaylist(filePath)) {
@@ -136,7 +140,12 @@ class RecentlyPlayedViewModel(application: Application) : AndroidViewModel(appli
         val isContentUri = filePath.startsWith("content://", ignoreCase = true)
 
         val video = when {
-          isNetworkUri -> createNetworkVideoFromUrl(filePath, entity?.videoTitle, entity)
+          isNetworkUri -> {
+            val decodedTitle =
+              entity?.videoTitle
+                ?: app.marlboroadvance.mpvex.domain.network.NetworkRecent.parse(filePath)?.fileName
+            createNetworkVideoFromUrl(filePath, decodedTitle, entity)
+          }
           isContentUri -> createVideoFromContentUri(filePath, Uri.parse(filePath), entity?.videoTitle, entity)
           else -> {
             val file = File(filePath)

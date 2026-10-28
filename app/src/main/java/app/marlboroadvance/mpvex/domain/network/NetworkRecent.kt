@@ -13,6 +13,11 @@ import java.net.URLEncoder
 object NetworkRecent {
   const val SCHEME = "mpvexnetwork"
 
+  // Intent extras carried by network launches (producer: NetworkPlaybackStarter,
+  // readers: PlayerActivity). Kept here so the literals live in one place.
+  const val EXTRA_NETWORK_FILE_PATH = "network_file_path"
+  const val EXTRA_NETWORK_CONNECTION_ID = "network_connection_id"
+
   /**
    * "mpvexnetwork://<connectionId>/<a/b/file.mkv>" for a network file at
    * path "a/b/file.mkv" on that connection. Path segments are encoded

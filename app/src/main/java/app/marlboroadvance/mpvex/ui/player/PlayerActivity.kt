@@ -1874,7 +1874,13 @@ class PlayerActivity :
           }
 
           // Update recently played with the parsed video title, duration, and file size
-          val filePath = when (uri.scheme) {
+          val networkFilePath = intent.getStringExtra(NetworkRecent.EXTRA_NETWORK_FILE_PATH)
+          val networkConnectionId = intent.getLongExtra(NetworkRecent.EXTRA_NETWORK_CONNECTION_ID, -1L)
+          val filePath =
+            if (networkFilePath != null && networkConnectionId != -1L) {
+              NetworkRecent.recentPath(networkConnectionId, networkFilePath)
+            } else {
+              when (uri.scheme) {
             "file" -> uri.path ?: uri.toString()
             "content" -> {
               contentResolver.query(
@@ -1892,6 +1898,7 @@ class PlayerActivity :
             }
 
             else -> uri.toString()
+          }
           }
 
           // Get duration and file size from MPV
@@ -2197,17 +2204,17 @@ class PlayerActivity :
 
       // Network files played via the proxy: store a stable identity instead
       // of the ephemeral proxy URL, so history and replay survive restarts.
-      val networkFilePath = intent.getStringExtra("network_file_path")
-      val networkConnectionId = intent.getLongExtra("network_connection_id", -1L)
+      val networkFilePath = intent.getStringExtra(NetworkRecent.EXTRA_NETWORK_FILE_PATH)
+      val networkConnectionId = intent.getLongExtra(NetworkRecent.EXTRA_NETWORK_CONNECTION_ID, -1L)
 
       val filePath =
         if (networkFilePath != null && networkConnectionId != -1L) {
           NetworkRecent.recentPath(networkConnectionId, networkFilePath)
         } else {
-        when (uri.scheme) {
-          "file" -> {
-            uri.path ?: uri.toString()
-          }
+          when (uri.scheme) {
+            "file" -> {
+              uri.path ?: uri.toString()
+            }
 
           "content" -> {
             contentResolver
