@@ -53,12 +53,13 @@ class NetworkThumbnailCache private constructor(
   }
 
   /**
-   * Cached frame, or extract the first frame through the streaming proxy
-   * (serialized so a big folder can't hammer the server).
+   * Cached frame, or extract one through the streaming proxy at
+   * [positionSec] (serialized so a big folder can't hammer the server).
    */
   suspend fun getOrLoad(
     connection: NetworkConnection,
     file: NetworkFile,
+    positionSec: Double = DEFAULT_POSITION_SECONDS,
   ): Bitmap? =
     withContext(Dispatchers.IO) {
       cached(connection.id, file.path)?.let { return@withContext it }
@@ -71,7 +72,7 @@ class NetworkThumbnailCache private constructor(
           runCatching {
             FastThumbnails.generateAsync(
               stream.url,
-              PREFERRED_POSITION_SECONDS,
+              positionSec,
               DIMENSION,
               useHwDec = false,
             )
@@ -133,7 +134,7 @@ class NetworkThumbnailCache private constructor(
   companion object {
     private const val DIMENSION = 256
     private const val JPEG_QUALITY = 85
-    private const val PREFERRED_POSITION_SECONDS = 2.0
+    const val DEFAULT_POSITION_SECONDS = 2.0
     private const val DISK_CACHE_BYTES = 64L * 1024 * 1024
 
     @Volatile

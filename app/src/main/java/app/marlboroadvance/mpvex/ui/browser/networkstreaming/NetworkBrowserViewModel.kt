@@ -76,11 +76,6 @@ class NetworkBrowserViewModel(
    * Saved resume position of an IN-PROGRESS network file in seconds, or null
    * when unwatched or fully watched (their thumbnails stay at start-of-file).
    */
-  fun resumePositionSeconds(file: NetworkFile): Double? {
-    val state = _playbackStates.value[NetworkRecent.playbackKey(connectionId, file.path)] ?: return null
-    if (state.lastPosition <= 0 || state.timeRemaining <= 0) return null
-    return state.lastPosition.toDouble()
-  }
 
   /** Watched fraction (0f..1f exclusive) of a network file, or null when unwatched/finished. */
   fun progressFraction(file: NetworkFile): Float? {
@@ -89,7 +84,15 @@ class NetworkBrowserViewModel(
     val total = state.lastPosition + state.timeRemaining
     if (total <= 0) return null
     val fraction = (state.lastPosition.toFloat() / total).coerceIn(0f, 1f)
-    return fraction.takeIf { it in 0.01f..0.99f }
+    // Any started episode shows its bar — even a thin one — so "I'm in the
+    // middle" is visible; fully watched episodes stay clean.
+    return fraction.takeIf { it < 0.99f }
+  }
+
+  /** Saved resume position of an in-progress network file in seconds. */
+  fun resumePositionSeconds(file: NetworkFile): Double? {
+    val state = _playbackStates.value[NetworkRecent.playbackKey(connectionId, file.path)] ?: return null
+    return state.lastPosition.takeIf { it > 0 }?.toDouble()
   }
 
   /** Pin a folder to Home, or unpin it if already pinned. */
