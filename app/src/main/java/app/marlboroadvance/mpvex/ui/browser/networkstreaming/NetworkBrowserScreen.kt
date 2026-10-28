@@ -144,6 +144,7 @@ data class NetworkBrowserScreen(
         },
         thumbnailCache = thumbnailCache,
         playbackStates = playbackStates,
+        onRequestFirstFrame = { file -> viewModel.requestFirstFrame(file) },
         modifier = Modifier.padding(padding),
       )
 
@@ -192,6 +193,7 @@ private fun NetworkBrowserContent(
   onVideoClick: (NetworkFile) -> Unit,
   thumbnailCache: NetworkThumbnailCache,
   playbackStates: Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>,
+  onRequestFirstFrame: (NetworkFile) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   // Load connection details
@@ -335,7 +337,12 @@ private fun NetworkBrowserContent(
                 connection?.let { conn ->
                   var thumbnail by remember(video.path) { mutableStateOf<android.graphics.Bitmap?>(null) }
                   // Live: initial frame + every replacement the player stores.
+                  // Unplayed files have no frame yet — request its first-frame
+                  // extraction once; the broadcast below picks it up.
                   LaunchedEffect(video.path) {
+                    if (thumbnailCache.cached(conn.id, video.path) == null) {
+                      onRequestFirstFrame(video)
+                    }
                     thumbnailCache.observe(conn.id, video.path).collect { thumbnail = it }
                   }
                   NetworkVideoCard(

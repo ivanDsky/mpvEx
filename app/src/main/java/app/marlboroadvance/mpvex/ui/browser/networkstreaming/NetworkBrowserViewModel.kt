@@ -17,6 +17,7 @@ import app.marlboroadvance.mpvex.domain.network.NetworkRecent
 import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
 import app.marlboroadvance.mpvex.repository.NetworkRepository
 import app.marlboroadvance.mpvex.utils.sort.SortUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -79,10 +80,19 @@ class NetworkBrowserViewModel(
   fun progressFraction(file: NetworkFile): Float? =
     progressFractionOf(playbackStates.value, connectionId, file)
 
-  /** Cached frame, or extract the first frame through the starter. */
-  suspend fun thumbnailFor(file: NetworkFile): android.graphics.Bitmap? {
-    thumbnailCache.cached(connectionId, file.path)?.let { return it }
-    return playbackStarter.extractFrameById(connectionId, file)
+  /**
+   * No stored frame means the file was never played here: extract its first
+   * frame once. put() broadcasts through [NetworkThumbnailCache.observe], so
+   * the requesting row — and the Home shelf — update by themselves.
+   */
+  private val firstFrameRequested = mutableSetOf<String>()
+
+  fun requestFirstFrame(file: NetworkFile) {
+    if (file.path in firstFrameRequested) return
+    firstFrameRequested += file.path
+    viewModelScope.launch(Dispatchers.IO) {
+      playbackStarter.extractFrameById(connectionId, file)
+    }
   }
 
   /** Pin a folder to Home, or unpin it if already pinned. */
