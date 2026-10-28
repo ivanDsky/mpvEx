@@ -8,12 +8,15 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import android.net.Uri
 import app.marlboroadvance.mpvex.domain.network.NetworkConnection
 import app.marlboroadvance.mpvex.domain.network.NetworkFile
-import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
 import app.marlboroadvance.mpvex.domain.network.NetworkFolderQueue
+import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
 import app.marlboroadvance.mpvex.repository.NetworkRepository
+import app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy
 import app.marlboroadvance.mpvex.utils.sort.SortUtils
+import java.net.URLEncoder
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,6 +75,30 @@ class NetworkBrowserViewModel(
 
 
   /**
+   * Register a file with the streaming proxy and return its playback URI.
+   * When [withFileName] is set, the file name is appended to the path so
+   * player titles derived from the URL show it; the proxy routes on the
+   * first path segment only.
+   */
+  private fun proxyUri(
+    connection: NetworkConnection,
+    file: NetworkFile,
+    streamId: String,
+    withFileName: Boolean = false,
+  ): Uri {
+    val proxy = NetworkStreamingProxy.getInstance()
+    val base =
+      proxy.registerStream(
+        streamId = streamId,
+        connection = connection,
+        filePath = file.path,
+        fileSize = file.size,
+        mimeType = file.mimeType ?: "video/mp4",
+      )
+    return Uri.parse(if (withFileName) "$base/${URLEncoder.encode(file.name, "UTF-8")}" else base)
+  }
+
+  /**
    * Play a video file
    */
   fun playVideo(file: NetworkFile) {
@@ -84,49 +111,33 @@ class NetworkBrowserViewModel(
         val useProxy = connection.protocol in PROXY_PROTOCOLS
 
         // Queue the rest of the folder like local playback does: list the
-        // parent, order videos naturally, register each with the proxy.
-        val queue = mutableListOf<android.net.Uri>()
+        // parent, order videos naturally, register each sibling once.
+        var queue: List<Uri> = emptyList()
         var queueIndex = 0
         if (useProxy) {
           val parentPath = file.path.substringBeforeLast("/", missingDelimiterValue = "")
-          repository.listFiles(connection, parentPath).onSuccess { listing ->
-            NetworkFolderQueue.plan(listing, file.path)?.let { plan ->
-              val proxy = app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy.getInstance()
-              val timestamp = System.currentTimeMillis()
-              queue.addAll(
-                plan.siblings.mapIndexed { i, sibling ->
-                  // Suffix the file name so the player's URL-derived title
-                  // shows it; the proxy routes on the first path segment.
-                  val base = proxy.registerStream(
-                    streamId = "${connectionId}_${timestamp}_$i",
-                    connection = connection,
-                    filePath = sibling.path,
-                    fileSize = sibling.size,
-                    mimeType = sibling.mimeType ?: "video/mp4",
-                  )
-                  android.net.Uri.parse("$base/${java.net.URLEncoder.encode(sibling.name, "UTF-8")}")
-                },
-              )
-              queueIndex = plan.currentIndex
-            }
+          val listing = repository.listFiles(connection, parentPath).getOrNull()
+          val plan = listing?.let { NetworkFolderQueue.plan(it, file.path) }
+          if (plan != null) {
+            val proxy = NetworkStreamingProxy.getInstance()
+            val timestamp = System.currentTimeMillis()
+            queue =
+              plan.siblings.mapIndexed { i, sibling ->
+                proxyUri(connection, sibling, "${connectionId}_${timestamp}_$i", withFileName = true)
+              }
+            queueIndex = plan.currentIndex
           }
         }
 
-        val uri = if (useProxy) {
-          val proxy = app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy.getInstance()
-          val streamId = "${connectionId}_${System.currentTimeMillis()}"
-          val proxyUrl = proxy.registerStream(
-            streamId = streamId,
-            connection = connection,
-            filePath = file.path,
-            fileSize = file.size,
-            mimeType = file.mimeType ?: "video/mp4",
-          )
-          android.net.Uri.parse(proxyUrl)
-        } else {
-          NetworkStreamingProvider.setConnection(connectionId, connection)
-          NetworkStreamingProvider.getUri(application, connectionId, file.path)
-        }
+        val uri =
+          when {
+            queue.isNotEmpty() -> queue[queueIndex]
+            useProxy -> proxyUri(connection, file, "${connectionId}_${System.currentTimeMillis()}")
+            else -> {
+              NetworkStreamingProvider.setConnection(connectionId, connection)
+              NetworkStreamingProvider.getUri(application, connectionId, file.path)
+            }
+          }
 
         // Launch the player
         val intent = Intent(Intent.ACTION_VIEW, uri)
@@ -138,7 +149,7 @@ class NetworkBrowserViewModel(
         // Pass the original network file path for stable media identifier (position saving)
         intent.putExtra("network_file_path", file.path)
         intent.putExtra("network_connection_id", connectionId)
-        if (queue.size > 1) {
+        if (queue.isNotEmpty()) {
           intent.putParcelableArrayListExtra("playlist", ArrayList(queue))
           intent.putExtra("playlist_index", queueIndex)
         }
