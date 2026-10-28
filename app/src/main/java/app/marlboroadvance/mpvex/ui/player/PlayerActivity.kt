@@ -1815,6 +1815,7 @@ savePlaybackStateJob?.let { job ->
             videoFilePath = networkFilePath,
             videoFileName = fileName,
             networkConnectionId = networkConnectionId,
+            selectFirstSubtitle = subtitlesPreferences.enabledByDefault.get(),
           )
         } else {
           // Regular file or direct network stream
@@ -1823,6 +1824,7 @@ savePlaybackStateJob?.let { job ->
             SubtitleOps.autoloadSubtitles(
               videoFilePath = filePath,
               videoFileName = fileName,
+              selectFirstSubtitle = subtitlesPreferences.enabledByDefault.get(),
             )
           }
         }

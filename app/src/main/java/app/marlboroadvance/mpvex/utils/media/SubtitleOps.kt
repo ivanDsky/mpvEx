@@ -19,6 +19,14 @@ object SubtitleOps : KoinComponent {
   private const val TAG = "SubtitleOps"
   private val networkRepository: NetworkRepository by inject()
 
+  /**
+   * The first autoloaded subtitle only selects itself when subtitles are
+   * enabled by default; otherwise every file loads as an available,
+   * unselected track.
+   */
+  private fun subAddFlag(index: Int, selectFirstSubtitle: Boolean): String =
+    if (index == 0 && selectFirstSubtitle) "select" else "auto"
+
   private fun shouldSkipNetworkSubtitleAutoload(videoFilePath: String, videoFileName: String): Boolean {
     val p = videoFilePath.lowercase(Locale.getDefault())
     val n = videoFileName.lowercase(Locale.getDefault())
@@ -37,6 +45,7 @@ object SubtitleOps : KoinComponent {
     videoFilePath: String,
     videoFileName: String,
     networkConnectionId: Long = -1L,
+    selectFirstSubtitle: Boolean = true,
   ) = withContext(Dispatchers.IO) {
     try {
       // Skip file descriptor URIs (these don't have a parent directory concept)
@@ -48,7 +57,7 @@ object SubtitleOps : KoinComponent {
       // Check if this is a network file with connection ID (SMB/FTP/WebDAV via proxy)
       if (networkConnectionId != -1L) {
         // For network files, scan the directory using network client
-        autoloadNetworkFileSubtitles(videoFilePath, videoFileName, networkConnectionId)
+        autoloadNetworkFileSubtitles(videoFilePath, videoFileName, networkConnectionId, selectFirstSubtitle)
         return@withContext
       }
 
@@ -61,10 +70,10 @@ object SubtitleOps : KoinComponent {
           return@withContext
         }
         // For network streams, try to load subtitles with common extensions
-        autoloadNetworkSubtitles(videoFilePath, videoFileName)
+        autoloadNetworkSubtitles(videoFilePath, videoFileName, selectFirstSubtitle)
       } else {
         // For local files, scan the directory
-        autoloadLocalSubtitles(videoFilePath, videoFileName)
+        autoloadLocalSubtitles(videoFilePath, videoFileName, selectFirstSubtitle)
       }
     } catch (e: Exception) {
       Log.e(TAG, "Error loading subtitles", e)
@@ -79,6 +88,7 @@ object SubtitleOps : KoinComponent {
     videoFilePath: String,
     videoFileName: String,
     networkConnectionId: Long,
+    selectFirstSubtitle: Boolean,
   ) {
     try {
       Log.d(TAG, "Autoloading subtitles for network file: $videoFilePath")
@@ -158,8 +168,7 @@ object SubtitleOps : KoinComponent {
           // Get current subtitle track count before adding
           val trackCountBefore = MPVLib.getPropertyInt("track-list/count") ?: 0
 
-          // Use "select" for the first subtitle, "auto" for others
-          val flag = if (index == 0) "select" else "auto"
+          val flag = subAddFlag(index, selectFirstSubtitle)
           MPVLib.command("sub-add", proxyUrl, flag)
 
           // Set the title for the newly added subtitle track
@@ -183,6 +192,7 @@ object SubtitleOps : KoinComponent {
   private suspend fun autoloadLocalSubtitles(
     videoFilePath: String,
     videoFileName: String,
+    selectFirstSubtitle: Boolean,
   ) {
     val videoFile = File(videoFilePath)
     val videoDirectory = videoFile.parentFile ?: return
@@ -199,8 +209,7 @@ object SubtitleOps : KoinComponent {
       withContext(Dispatchers.Main) {
         subtitles.forEachIndexed { index, subtitle ->
           // MPV command format: sub-add <url> [<flags> [<title>]]
-          // Use "select" for the first autoloaded subtitle so it is enabled by default
-          val flag = if (index == 0) "select" else "auto"
+          val flag = subAddFlag(index, selectFirstSubtitle)
           MPVLib.command("sub-add", subtitle.absolutePath, flag, subtitle.name)
           Log.d(TAG, "Loaded local subtitle: ${subtitle.name} (flag=$flag)")
         }
@@ -211,6 +220,7 @@ object SubtitleOps : KoinComponent {
   private suspend fun autoloadNetworkSubtitles(
     videoFilePath: String,
     videoFileName: String,
+    selectFirstSubtitle: Boolean,
   ) {
     // Get base name without extension
     val baseName = videoFileName.substringBeforeLast('.')
@@ -230,9 +240,8 @@ object SubtitleOps : KoinComponent {
       val subtitleUrl = "$baseUrl$baseName.$ext"
       try {
         // Try to add the subtitle - MPV will handle if it doesn't exist
-        // Use "auto" flag so MPV doesn't select it if it's not found
-        // Only use "select" for the first one (.srt)
-        val flag = if (index == 0) "select" else "auto"
+        // The "auto" flag means MPV won't select a file that doesn't exist
+        val flag = subAddFlag(index, selectFirstSubtitle)
         MPVLib.command("sub-add", subtitleUrl, flag, "$baseName.$ext")
         Log.d(TAG, "Attempting to load network subtitle: $subtitleUrl (flag=$flag)")
       } catch (e: Exception) {

@@ -227,6 +227,13 @@ class TrackSelector(
 
       if (hasState && currentSid > 0) return
 
+      // "Show subtitles by default" off: tracks still load, but nothing is
+      // auto-selected until the user enables one from the track list.
+      if (!subtitlesPreferences.enabledByDefault.get()) {
+        Log.d(TAG, "Smart Sub: Subtitles disabled by default. No track auto-selected.")
+        return
+      }
+
       val isAnimeContext = detectAnimeContext(tracks)
       Log.d(TAG, "Smart Tracks: Context defined by Internal Auto-Detection -> $isAnimeContext")
 

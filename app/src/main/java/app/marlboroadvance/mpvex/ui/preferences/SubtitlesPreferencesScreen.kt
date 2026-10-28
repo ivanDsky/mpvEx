@@ -195,6 +195,21 @@ object SubtitlesPreferencesScreen : Screen {
               
               PreferenceDivider()
 
+              val showByDefault by preferences.enabledByDefault.collectAsState()
+              SwitchPreference(
+                value = showByDefault,
+                onValueChange = { preferences.enabledByDefault.set(it) },
+                title = { Text(stringResource(R.string.pref_subtitles_show_by_default_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_subtitles_show_by_default_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
               val autoload by preferences.autoloadMatchingSubtitles.collectAsState()
               SwitchPreference(
                 value = autoload,
