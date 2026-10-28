@@ -260,7 +260,7 @@ object RecentlyPlayedScreen : Screen {
             onClick = {
               isFabExpanded.value = false
               coroutineScope.launch {
-                val recentlyPlayedVideos = app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps.getRecentlyPlayed(limit = 1)
+                val recentlyPlayedVideos = listOfNotNull(app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps.getLastPlayedEntity())
                 val lastPlayed = recentlyPlayedVideos.firstOrNull()
                 if (lastPlayed != null) {
                   MediaUtils.playFile(lastPlayed.filePath, context, "recently_played_button")

@@ -227,6 +227,19 @@ class PlayerActivity :
   private var mpvInitialized = false // Track MPV initialization state
   private var savePlaybackStateJob: kotlinx.coroutines.Job? = null // Track ongoing save job
 
+  // Periodic position save while playing, so progress/i-n stay current
+  // without waiting for a pause.
+  private val periodicSaveHandler = android.os.Handler(android.os.Looper.getMainLooper())
+  private val periodicSaveRunnable =
+    object : Runnable {
+      override fun run() {
+        if (viewModel.paused != true) {
+          runCatching { saveVideoPlaybackState(fileName) }
+        }
+        periodicSaveHandler.postDelayed(this, POSITION_SAVE_INTERVAL_MS)
+      }
+    }
+
   // Identity of the network file currently loaded — updated as the playlist
   // advances, so history/progress/subtitles track the RIGHT episode.
   private var currentNetworkConnectionId: Long = -1L
@@ -593,7 +606,9 @@ class PlayerActivity :
       // Wait for any pending save operation to complete before destroying MPV
       // This prevents the race condition where the save coroutine tries to access
       // MPV properties after MPVLib.destroy() has been called
-      savePlaybackStateJob?.let { job ->
+            periodicSaveHandler.removeCallbacksAndMessages(null)
+
+savePlaybackStateJob?.let { job ->
         Log.d(TAG, "Waiting for save playback state job to complete...")
         runCatching {
           // Use runBlocking to ensure we wait for the job to finish
@@ -1686,6 +1701,13 @@ class PlayerActivity :
       // If fileName was already set, but mediaIdentifier is missing, set it for safety
       mediaIdentifier = getMediaIdentifier(intent, fileName)
     }
+
+    // Record history before anything that could block the main thread.
+    lifecycleScope.launch { saveRecentlyPlayed() }
+
+    // Keep progress current while playing (badges, continue, recents).
+    periodicSaveHandler.removeCallbacks(periodicSaveRunnable)
+    periodicSaveHandler.postDelayed(periodicSaveRunnable, POSITION_SAVE_INTERVAL_MS)
 
     // Start media notification service (like YouTube - always show notification)
     startBackgroundPlayback()
@@ -3225,6 +3247,23 @@ class PlayerActivity :
     runCatching {
       val filePath =
         when (uri.scheme) {
+          NetworkRecent.SCHEME -> {
+            // Resolve the ephemeral proxy URI back to its stable identity,
+            // so queue-advanced episodes record a replayable history row.
+            val streamId = uri.path?.trim('/')?.substringBefore('/')
+            val info =
+              streamId?.let {
+                app.marlboroadvance.mpvex.ui.browser.networkstreaming.proxy.NetworkStreamingProxy
+                  .getInstance()
+                  .getStreamInfo(it)
+              }
+            if (info != null) {
+              NetworkRecent.recentPath(info.connection.id, info.filePath)
+            } else {
+              uri.toString()
+            }
+          }
+
           "file" -> {
             uri.path ?: uri.toString()
           }
@@ -3688,6 +3727,8 @@ class PlayerActivity :
      * Maximum volume for MPV in percent.
      */
     private const val MAX_MPV_VOLUME = 100
+
+    private const val POSITION_SAVE_INTERVAL_MS = 5_000L
 
     /**
      * Milliseconds-to-seconds conversion factor.
