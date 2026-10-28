@@ -535,81 +535,83 @@ object FolderListScreen : Screen {
             },
             onUnpin = { viewModel.unpinNetworkFolder(it) },
           )
-          when (permissionState.status) {
-          PermissionStatus.Granted -> {
-            if (isSearching) {
-              // Show search results
-              Box(modifier = Modifier.fillMaxSize()) {
-                if (isSearchLoading) {
-                  // Loading state
-                  Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                  ) {
-                    CircularProgressIndicator()
-                  }
-                } else if (searchResults.isEmpty()) {
-                  // No results
-                  EmptyState(
-                    icon = Icons.Filled.Search,
-                    title = "No results found",
-                    message = "No folders or videos match your search query",
-                    modifier = Modifier.fillMaxSize(),
-                  )
-                } else {
+          Box(modifier = Modifier.weight(1f)) {
+                        when (permissionState.status) {
+              PermissionStatus.Granted -> {
+                if (isSearching) {
                   // Show search results
-                  SearchResultsContent(
-                    searchResults = searchResults,
-                    navigationBarHeight = navigationBarHeight,
-                    onFolderClick = { folder ->
-                      backstack.add(app.marlboroadvance.mpvex.ui.browser.videolist.VideoListScreen(folder.bucketId, folder.name))
-                    },
-                    onVideoClick = { video ->
-                      MediaUtils.playFile(video, context)
-                    },
+                  Box(modifier = Modifier.fillMaxSize()) {
+                    if (isSearchLoading) {
+                      // Loading state
+                      Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                      ) {
+                        CircularProgressIndicator()
+                      }
+                    } else if (searchResults.isEmpty()) {
+                      // No results
+                      EmptyState(
+                        icon = Icons.Filled.Search,
+                        title = "No results found",
+                        message = "No folders or videos match your search query",
+                        modifier = Modifier.fillMaxSize(),
+                      )
+                    } else {
+                      // Show search results
+                      SearchResultsContent(
+                        searchResults = searchResults,
+                        navigationBarHeight = navigationBarHeight,
+                        onFolderClick = { folder ->
+                          backstack.add(app.marlboroadvance.mpvex.ui.browser.videolist.VideoListScreen(folder.bucketId, folder.name))
+                        },
+                        onVideoClick = { video ->
+                          MediaUtils.playFile(video, context)
+                        },
+                        mediaLayoutMode = mediaLayoutMode,
+                        folderGridColumns = folderGridColumns,
+                      )
+                    }
+                  }
+                } else {
+                  FolderListContent(
+                    folders = filteredFolders,
+                    foldersWithNewCount = foldersWithNewCount,
+                    recentlyPlayedFilePath = recentlyPlayedFilePath,
+                    isLoading = isLoading,
+                    scanStatus = scanStatus,
+                    hasCompletedInitialLoad = hasCompletedInitialLoad,
+                    foldersWereDeleted = foldersWereDeleted,
                     mediaLayoutMode = mediaLayoutMode,
                     folderGridColumns = folderGridColumns,
+                    tapThumbnailToSelect = tapThumbnailToSelect,
+                    navigationBarHeight = navigationBarHeight,
+                    listState = listState,
+                    gridState = gridState,
+                    isRefreshing = isRefreshing,
+                    selectionManager = selectionManager,
+                    onRefresh = { viewModel.refresh() },
+                    onFolderClick = { folder ->
+                      if (selectionManager.isInSelectionMode) {
+                        selectionManager.toggle(folder)
+                      } else {
+                        backstack.add(app.marlboroadvance.mpvex.ui.browser.videolist.VideoListScreen(folder.bucketId, folder.name))
+                      }
+                    },
+                    onFolderLongClick = { folder ->
+                      selectionManager.toggle(folder)
+                    },
                   )
                 }
               }
-            } else {
-              FolderListContent(
-                folders = filteredFolders,
-                foldersWithNewCount = foldersWithNewCount,
-                recentlyPlayedFilePath = recentlyPlayedFilePath,
-                isLoading = isLoading,
-                scanStatus = scanStatus,
-                hasCompletedInitialLoad = hasCompletedInitialLoad,
-                foldersWereDeleted = foldersWereDeleted,
-                mediaLayoutMode = mediaLayoutMode,
-                folderGridColumns = folderGridColumns,
-                tapThumbnailToSelect = tapThumbnailToSelect,
-                navigationBarHeight = navigationBarHeight,
-                listState = listState,
-                gridState = gridState,
-                isRefreshing = isRefreshing,
-                selectionManager = selectionManager,
-                onRefresh = { viewModel.refresh() },
-                onFolderClick = { folder ->
-                  if (selectionManager.isInSelectionMode) {
-                    selectionManager.toggle(folder)
-                  } else {
-                    backstack.add(app.marlboroadvance.mpvex.ui.browser.videolist.VideoListScreen(folder.bucketId, folder.name))
-                  }
-                },
-                onFolderLongClick = { folder ->
-                  selectionManager.toggle(folder)
-                },
-              )
+    
+              is PermissionStatus.Denied -> {
+                PermissionDeniedState(
+                  onRequestPermission = { permissionState.launchPermissionRequest() },
+                  modifier = Modifier,
+                )
+              }
             }
-          }
-
-          is PermissionStatus.Denied -> {
-            PermissionDeniedState(
-              onRequestPermission = { permissionState.launchPermissionRequest() },
-              modifier = Modifier,
-            )
-          }
           }
         }
       }
@@ -1268,7 +1270,7 @@ private fun PinnedNetworkFoldersSection(
             Text(
               text = folder.name,
               style = MaterialTheme.typography.bodyMedium,
-              fontWeight = FontWeight.SemiBold,
+              fontWeight = FontWeight.Bold,
               maxLines = 2,
               overflow = TextOverflow.Ellipsis,
             )

@@ -1,5 +1,7 @@
 package app.marlboroadvance.mpvex.repository
 
+import androidx.room.withTransaction
+import app.marlboroadvance.mpvex.database.MpvExDatabase
 import app.marlboroadvance.mpvex.database.dao.NetworkConnectionDao
 import app.marlboroadvance.mpvex.database.dao.PinnedFolderDao
 import app.marlboroadvance.mpvex.domain.network.ConnectionStatus
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class NetworkRepository(
   private val dao: NetworkConnectionDao,
   private val pinnedFolderDao: PinnedFolderDao,
+  private val database: MpvExDatabase,
 ) {
   // Active network clients
   private val activeClients = mutableMapOf<Long, NetworkClient>()
@@ -76,9 +79,11 @@ class NetworkRepository(
    * Delete a connection
    */
   suspend fun deleteConnection(connection: NetworkConnection) {
-    dao.delete(connection)
-    // A connection's Home pins are removed with it
-    pinnedFolderDao.deleteForConnection(connection.id)
+    // A connection's Home pins are removed with it, atomically
+    database.withTransaction {
+      dao.delete(connection)
+      pinnedFolderDao.deleteForConnection(connection.id)
+    }
     // Clean up connection status
     _connectionStatuses.value -= connection.id
     // Disconnect if active
