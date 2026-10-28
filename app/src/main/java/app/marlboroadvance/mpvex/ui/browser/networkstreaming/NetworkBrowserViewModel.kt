@@ -12,6 +12,7 @@ import app.marlboroadvance.mpvex.domain.network.NetworkConnection
 import app.marlboroadvance.mpvex.domain.network.NetworkFile
 import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
 import app.marlboroadvance.mpvex.repository.NetworkRepository
+import app.marlboroadvance.mpvex.utils.sort.SortUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,10 +55,7 @@ class NetworkBrowserViewModel(
 
         repository.listFiles(connection, currentPath)
           .onSuccess { fileList ->
-            _files.value = fileList.sortedWith(
-              compareBy<NetworkFile> { !it.isDirectory }
-                .thenBy { it.name.lowercase() },
-            )
+            _files.value = SortUtils.sortNetworkFiles(fileList)
           }
           .onFailure { e ->
             _error.value = e.message ?: "Unknown error"

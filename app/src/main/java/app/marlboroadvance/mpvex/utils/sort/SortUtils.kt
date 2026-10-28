@@ -3,11 +3,24 @@ package app.marlboroadvance.mpvex.utils.sort
 import app.marlboroadvance.mpvex.domain.browser.FileSystemItem
 import app.marlboroadvance.mpvex.domain.media.model.Video
 import app.marlboroadvance.mpvex.domain.media.model.VideoFolder
+import app.marlboroadvance.mpvex.domain.network.NetworkFile
 import app.marlboroadvance.mpvex.preferences.FolderSortType
 import app.marlboroadvance.mpvex.preferences.SortOrder
 import app.marlboroadvance.mpvex.preferences.VideoSortType
 
 object SortUtils {
+  /**
+   * Sort network files for the browser: directories first, then most recently
+   * modified first within each group. Equal timestamps break ties
+   * alphabetically so the order is deterministic.
+   */
+  fun sortNetworkFiles(files: List<NetworkFile>): List<NetworkFile> =
+    files.sortedWith(
+      compareBy<NetworkFile> { !it.isDirectory }
+        .thenByDescending { it.lastModified }
+        .thenBy { it.name.lowercase() },
+    )
+
   /**
    * Sort videos by the specified type and order
    */
