@@ -1275,7 +1275,7 @@ private fun PinnedNetworkFoldersSection(
         val pinProgress = progress["${folder.connectionId}:${folder.path}"]
         Card(
           modifier = Modifier
-            .width(140.dp)
+            .width(210.dp)
             .combinedClickable(
               onClick = { onFolderClick(folder) },
               onLongClick = { onFolderLongClick(folder) },
@@ -1287,9 +1287,11 @@ private fun PinnedNetworkFoldersSection(
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .heightIn(min = 96.dp),
+              .heightIn(min = 192.dp),
           ) {
-            // Episode frame as the card background, dimmed for legibility
+            // Episode frame as the card background, dimmed for legibility.
+            // While the frame extracts, the card is just the dim surface —
+            // no placeholder icon.
             val currentBitmap = pinProgress?.thumbnail
             if (currentBitmap != null) {
               Image(
@@ -1308,14 +1310,6 @@ private fun PinnedNetworkFoldersSection(
                 modifier = Modifier
                   .matchParentSize()
                   .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-              )
-              Icon(
-                imageVector = Icons.Filled.Folder,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                modifier = Modifier
-                  .align(Alignment.Center)
-                  .size(32.dp),
               )
             }
             Column(modifier = Modifier.padding(12.dp)) {
