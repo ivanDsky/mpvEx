@@ -6,22 +6,34 @@ import android.graphics.BitmapFactory
 import android.graphics.Bitmap.CompressFormat
 import android.util.LruCache
 import java.io.File
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+
+/** One stored frame, broadcast when replaced. */
+data class ThumbnailUpdate(val connectionId: Long, val path: String, val bitmap: Bitmap)
 
 /**
  * Frame store for network files: ONE frame per file, keyed by connection +
  * path. The player captures the current frame during playback (so the stored
  * frame tracks where you stopped); readers never touch the network.
  *
- * Episodes never played get their first frame on first view (extraction
- * through the streaming proxy), which then serves as the thumbnail.
+ * [observe] turns the store into a flow: subscribers get the stored frame
+ * immediately and every later capture without any lifecycle refresh.
  */
-class NetworkThumbnailCache private constructor(
+class NetworkThumbnailCache internal constructor(
   private val context: Context,
 ) {
   private val memoryCache =
     object : LruCache<String, Bitmap>(8 * 1024 * 1024) {
       override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
+
+  private val _updates = MutableSharedFlow<ThumbnailUpdate>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
   private fun memoryKey(connectionId: Long, path: String): String = "$connectionId|$path"
 
@@ -37,6 +49,21 @@ class NetworkThumbnailCache private constructor(
   fun put(connectionId: Long, path: String, bitmap: Bitmap) {
     memoryCache.put(memoryKey(connectionId, path), bitmap)
     writeToDisk(connectionId, path, bitmap)
+    _updates.tryEmit(ThumbnailUpdate(connectionId, path, bitmap))
+  }
+
+  /**
+   * The stored frame as it changes: emits the current frame (if any)
+   * immediately, then every new frame stored for this file. Subscribers —
+   * folder rows, pinned cards — update without any lifecycle refresh.
+   */
+  fun observe(connectionId: Long, path: String): Flow<Bitmap?> = flow {
+    emit(cached(connectionId, path))
+    emitAll(
+      _updates
+        .filter { it.connectionId == connectionId && it.path == path }
+        .map { it.bitmap },
+    )
   }
 
   private fun loadFromDisk(connectionId: Long, path: String): Bitmap? =

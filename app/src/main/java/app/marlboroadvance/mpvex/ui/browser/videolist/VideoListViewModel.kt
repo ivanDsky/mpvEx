@@ -20,6 +20,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,10 +62,25 @@ class VideoListViewModel(
   private val _videos = MutableStateFlow(initialVideos)
   val videos: StateFlow<List<Video>> = _videos.asStateFlow()
 
-  private val _videosWithPlaybackInfo = MutableStateFlow(
-    initialVideos.map { VideoWithPlaybackInfo(it) }
-  )
-  val videosWithPlaybackInfo: StateFlow<List<VideoWithPlaybackInfo>> = _videosWithPlaybackInfo.asStateFlow()
+  /**
+   * All playback states by media title — a Room flow. Progress, watched
+   * flags and the unplayed badge recompute as the player saves; nothing
+   * refreshes on resume.
+   */
+  private val allPlaybackStates: StateFlow<Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>> =
+    playbackStateRepository
+      .observeAllPlaybackStates()
+      .map { list -> list.associateBy { it.mediaTitle } }
+      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+  val videosWithPlaybackInfo: StateFlow<List<VideoWithPlaybackInfo>> =
+    combine(_videos, allPlaybackStates) { videos, states ->
+      videos.map { video -> playbackInfoFor(video, states) }
+    }.stateIn(
+      viewModelScope,
+      SharingStarted.WhileSubscribed(5_000),
+      initialVideos.map { VideoWithPlaybackInfo(it) },
+    )
 
   private val _isLoading = MutableStateFlow(initialVideos.isEmpty())
   val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -112,11 +128,6 @@ class VideoListViewModel(
     if (initialVideos.isNotEmpty()) {
       cachedFolderLastModified = initialEntry?.folderLastModified ?: 0L
 
-      // Load playback info for cached items immediately in background
-      viewModelScope.launch(Dispatchers.IO) {
-        loadPlaybackInfo(initialVideos)
-      }
-
       // Defer background media sync by 400ms so navigation transition completes at full 120fps with zero contention
       viewModelScope.launch(Dispatchers.IO) {
         delay(400)
@@ -142,21 +153,6 @@ class VideoListViewModel(
     viewModelScope.launch(Dispatchers.IO) {
       triggerMediaScan()
       loadVideos(isBackgroundRefresh = false)
-    }
-  }
-
-  /**
-   * Fast refresh of playback state (watch progress, watched status)
-   * without clearing cache, rescanning disk, or showing a loading indicator.
-   */
-  fun refreshPlaybackInfo() {
-    viewModelScope.launch(Dispatchers.IO) {
-      val currentVideos = _videos.value
-      if (currentVideos.isNotEmpty()) {
-        loadPlaybackInfo(currentVideos)
-      } else {
-        loadVideos(isBackgroundRefresh = false)
-      }
     }
   }
 
@@ -264,25 +260,14 @@ class VideoListViewModel(
         // Check if video list actually changed (including metadata fields like fps, subtitles, resolution)
         val hasChanged = _videos.value != finalVideos
 
-        if (hasChanged || _videosWithPlaybackInfo.value.isEmpty()) {
+        if (hasChanged) {
           _videos.value = finalVideos
-          val existingInfoMap = _videosWithPlaybackInfo.value.associateBy { it.video.path }
-          _videosWithPlaybackInfo.value = finalVideos.map { v ->
-            val prev = existingInfoMap[v.path]
-            if (prev != null) {
-              prev.copy(video = v)
-            } else {
-              VideoWithPlaybackInfo(v)
-            }
-          }
-          loadPlaybackInfo(finalVideos)
         }
       } catch (e: Exception) {
         if (e is kotlinx.coroutines.CancellationException) throw e
         Log.e(tag, "Error loading videos for bucket $bucketId", e)
         if (_videos.value.isEmpty()) {
           _videos.value = emptyList()
-          _videosWithPlaybackInfo.value = emptyList()
         }
       } finally {
         if (isActive) {
@@ -300,67 +285,66 @@ class VideoListViewModel(
     _videosWereDeletedOrMoved.value = true
   }
 
-  private suspend fun loadPlaybackInfo(videos: List<Video>) {
-    val videosWithInfo =
-      videos.map { video ->
-        val playbackState = playbackStateRepository.getVideoDataByTitle(MediaIdentifier.forLocalPath(video.path))
-        val watchedThreshold = browserPreferences.watchedThreshold.get()
+  private fun playbackInfoFor(
+    video: Video,
+    states: Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>,
+  ): VideoWithPlaybackInfo {
+    val playbackState = states[MediaIdentifier.forLocalPath(video.path)]
+    val watchedThreshold = browserPreferences.watchedThreshold.get()
 
-        // Calculate watch progress (0.0 to 1.0)
-        val durationSeconds = if (playbackState != null) {
-          if (video.duration > 0) {
-            video.duration / 1000
-          } else {
-            (playbackState.lastPosition + playbackState.timeRemaining).toLong()
-          }
-        } else 0L
-
-        val progress = if (playbackState != null && durationSeconds > 0) {
-          val watched = playbackState.lastPosition.toLong()
-          val progressValue = (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
-
-          // Only show progress for videos that are 1-99% complete
-          if (progressValue in 0.01f..0.99f) progressValue else null
-        } else {
-          null
-        }
-
-        // Check if video is "new" (recently added) and unplayed.
-        // A video qualifies if:
-        //   1. It has no playback state (never been played), AND
-        //   2. It was added/modified within the configured threshold days.
-        val isUnplayed = playbackState == null
-        val isOldAndUnplayed = if (isUnplayed) {
-          val thresholdDays = appearancePreferences.unplayedOldVideoDays.get()
-          val thresholdMillis = thresholdDays * 24 * 60 * 60 * 1000L
-          val videoAge = System.currentTimeMillis() - (video.dateModified * 1000L)
-          videoAge <= thresholdMillis
-        } else {
-          false
-        }
-
-        val isWatched = if (playbackState != null) {
-          if (durationSeconds > 0) {
-            val watched = playbackState.lastPosition.toLong()
-            val progressValue = (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
-            val calculatedWatched = progressValue >= (watchedThreshold / 100f)
-            playbackState.hasBeenWatched || calculatedWatched
-          } else {
-            playbackState.hasBeenWatched
-          }
-        } else {
-          false
-        }
-
-        VideoWithPlaybackInfo(
-          video = video,
-          timeRemaining = playbackState?.timeRemaining?.toLong(),
-          progressPercentage = progress,
-          isOldAndUnplayed = isOldAndUnplayed,
-          isWatched = isWatched,
-        )
+    // Calculate watch progress (0.0 to 1.0)
+    val durationSeconds = if (playbackState != null) {
+      if (video.duration > 0) {
+        video.duration / 1000
+      } else {
+        (playbackState.lastPosition + playbackState.timeRemaining).toLong()
       }
-    _videosWithPlaybackInfo.value = videosWithInfo
+    } else 0L
+
+    val progress = if (playbackState != null && durationSeconds > 0) {
+      val watched = playbackState.lastPosition.toLong()
+      val progressValue = (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
+
+      // Only show progress for videos that are 1-99% complete
+      if (progressValue in 0.01f..0.99f) progressValue else null
+    } else {
+      null
+    }
+
+    // Check if video is "new" (recently added) and unplayed.
+    // A video qualifies if:
+    //   1. It has no playback state (never been played), AND
+    //   2. It was added/modified within the configured threshold days.
+    val isUnplayed = playbackState == null
+    val isOldAndUnplayed = if (isUnplayed) {
+      val thresholdDays = appearancePreferences.unplayedOldVideoDays.get()
+      val thresholdMillis = thresholdDays * 24 * 60 * 60 * 1000L
+      val videoAge = System.currentTimeMillis() - (video.dateModified * 1000L)
+      videoAge <= thresholdMillis
+    } else {
+      false
+    }
+
+    val isWatched = if (playbackState != null) {
+      if (durationSeconds > 0) {
+        val watched = playbackState.lastPosition.toLong()
+        val progressValue = (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
+        val calculatedWatched = progressValue >= (watchedThreshold / 100f)
+        playbackState.hasBeenWatched || calculatedWatched
+      } else {
+        playbackState.hasBeenWatched
+      }
+    } else {
+      false
+    }
+
+    return VideoWithPlaybackInfo(
+      video = video,
+      timeRemaining = playbackState?.timeRemaining?.toLong(),
+      progressPercentage = progress,
+      isOldAndUnplayed = isOldAndUnplayed,
+      isWatched = isWatched,
+    )
   }
 
   private suspend fun triggerMediaScan() = withContext(Dispatchers.IO) {

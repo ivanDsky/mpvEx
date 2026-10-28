@@ -151,6 +151,9 @@ object RecentlyPlayedOps {
     return repository.getRecentlyPlayed(limit)
   }
 
+  fun observeRecentlyPlayed(limit: Int = 50): Flow<List<RecentlyPlayedEntity>> =
+    repository.observeRecentlyPlayed(limit)
+
   @OptIn(ExperimentalCoroutinesApi::class)
   fun observeLastPlayedPath(): Flow<String?> =
     repository

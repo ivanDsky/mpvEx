@@ -3,6 +3,7 @@ package app.marlboroadvance.mpvex.database.repository
 import app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity
 import app.marlboroadvance.mpvex.database.MpvExDatabase
 import app.marlboroadvance.mpvex.domain.playbackstate.repository.PlaybackStateRepository
+import kotlinx.coroutines.flow.Flow
 
 class PlaybackStateRepositoryImpl(
   private val database: MpvExDatabase,
@@ -16,6 +17,12 @@ class PlaybackStateRepositoryImpl(
 
   override suspend fun getNetworkPlaybackStates(): List<PlaybackStateEntity> =
     database.videoDataDao().getNetworkPlaybackStates()
+
+  override fun observeNetworkPlaybackStates(): Flow<List<PlaybackStateEntity>> =
+    database.videoDataDao().observeNetworkPlaybackStates()
+
+  override fun observeAllPlaybackStates(): Flow<List<PlaybackStateEntity>> =
+    database.videoDataDao().observeAllPlaybackStates()
 
   override suspend fun clearAllPlaybackStates() {
     database.videoDataDao().clearAllPlaybackStates()

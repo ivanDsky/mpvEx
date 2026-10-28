@@ -78,20 +78,8 @@ data class NetworkBrowserScreen(
     val error by viewModel.error.collectAsState()
     val pinnedPaths by viewModel.pinnedPaths.collectAsState()
     val thumbnailCache = org.koin.compose.koinInject<NetworkThumbnailCache>()
-    val thumbnailRefreshKey by viewModel.thumbnailRefreshKey.collectAsState()
+    val playbackStates by viewModel.playbackStates.collectAsState()
     var pinSheetFolder by remember { mutableStateOf<NetworkFile?>(null) }
-
-    // Watch progress can change while the player was up — refresh on resume
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
-      val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-        if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-          viewModel.refreshPlaybackStates()
-        }
-      }
-      lifecycleOwner.lifecycle.addObserver(observer)
-      onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
 
     // UI State
     val isRefreshing = remember { mutableStateOf(false) }
@@ -155,8 +143,7 @@ data class NetworkBrowserScreen(
           viewModel.playVideo(video)
         },
         thumbnailCache = thumbnailCache,
-        progressFraction = { file -> viewModel.progressFraction(file) },
-        thumbnailRefreshKey = thumbnailRefreshKey,
+        playbackStates = playbackStates,
         modifier = Modifier.padding(padding),
       )
 
@@ -204,8 +191,7 @@ private fun NetworkBrowserContent(
   onFolderLongClick: (NetworkFile) -> Unit,
   onVideoClick: (NetworkFile) -> Unit,
   thumbnailCache: NetworkThumbnailCache,
-  progressFraction: (NetworkFile) -> Float?,
-  thumbnailRefreshKey: Int,
+  playbackStates: Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>,
   modifier: Modifier = Modifier,
 ) {
   // Load connection details
@@ -348,16 +334,16 @@ private fun NetworkBrowserContent(
                 // Only show card if connection is loaded
                 connection?.let { conn ->
                   var thumbnail by remember(video.path) { mutableStateOf<android.graphics.Bitmap?>(null) }
-                  var thumbnailReady by remember(video.path) { mutableStateOf(false) }
-                  LaunchedEffect(video.path, thumbnailRefreshKey) {
-                    thumbnail = thumbnailCache.cached(conn.id, video.path)
+                  // Live: initial frame + every replacement the player stores.
+                  LaunchedEffect(video.path) {
+                    thumbnailCache.observe(conn.id, video.path).collect { thumbnail = it }
                   }
                   NetworkVideoCard(
                     file = video,
                     connection = conn,
                     onClick = { onVideoClick(video) },
                     thumbnail = thumbnail,
-                    progressPercentage = progressFraction(video),
+                    progressPercentage = progressFractionOf(playbackStates, connectionId, video),
                     modifier = Modifier,
                   )
                 }

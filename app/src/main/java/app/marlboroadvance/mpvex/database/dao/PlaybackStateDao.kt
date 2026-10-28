@@ -1,6 +1,7 @@
 package app.marlboroadvance.mpvex.database.dao
 
 import androidx.room.Dao
+import kotlinx.coroutines.flow.Flow
 import androidx.room.Query
 import androidx.room.Upsert
 import app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity
@@ -36,6 +37,12 @@ interface PlaybackStateDao {
 
   @Query("SELECT * FROM PlaybackStateEntity WHERE mediaTitle LIKE 'network_%'")
   suspend fun getNetworkPlaybackStates(): List<PlaybackStateEntity>
+
+  @Query("SELECT * FROM PlaybackStateEntity WHERE mediaTitle LIKE 'network_%'")
+  fun observeNetworkPlaybackStates(): Flow<List<PlaybackStateEntity>>
+
+  @Query("SELECT * FROM PlaybackStateEntity")
+  fun observeAllPlaybackStates(): Flow<List<PlaybackStateEntity>>
 
   @Upsert
   suspend fun upsertAll(playbackStates: List<PlaybackStateEntity>)

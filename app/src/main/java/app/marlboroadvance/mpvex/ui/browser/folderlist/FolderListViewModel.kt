@@ -20,6 +20,11 @@ import app.marlboroadvance.mpvex.utils.permission.PermissionUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,21 +68,101 @@ class FolderListViewModel(
   private val _videoFolders = MutableStateFlow<List<VideoFolder>>(emptyList())
   val videoFolders: StateFlow<List<VideoFolder>> = _videoFolders.asStateFlow()
 
-  private val _foldersWithNewCount = MutableStateFlow<List<FolderWithNewCount>>(emptyList())
-  val foldersWithNewCount: StateFlow<List<FolderWithNewCount>> = _foldersWithNewCount.asStateFlow()
+  /** Titles that have any playback state — changes only when a new file is played. */
+  private val playedTitles: StateFlow<Set<String>> =
+    playbackStateRepository
+      .observeAllPlaybackStates()
+      .map { list -> list.map { it.mediaTitle }.toSet() }
+      .distinctUntilChanged()
+      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+  /**
+   * Per-folder "new" badges as a flow: recomputes when folders, preferences,
+   * or the set of played titles changes — i.e. live, without resume hooks.
+   */
+  val foldersWithNewCount: StateFlow<List<FolderWithNewCount>> =
+    combine(
+      _videoFolders,
+      playedTitles,
+      appearancePreferences.showUnplayedOldVideoLabel.changes(),
+      appearancePreferences.unplayedOldVideoDays.changes(),
+    ) { folders, played, showLabel, thresholdDays ->
+      if (!showLabel) return@combine folders.map { FolderWithNewCount(it, 0) }
+      val thresholdMillis = thresholdDays * 24 * 60 * 60 * 1000L
+      val now = System.currentTimeMillis()
+      folders.map { folder ->
+        val videos =
+          runCatching {
+            app.marlboroadvance.mpvex.repository.MediaFileRepository.getVideosInFolder(getApplication(), folder.bucketId)
+          }.getOrDefault(emptyList())
+        val newCount =
+          videos.count { video ->
+            val age = now - (video.dateModified * 1000)
+            age <= thresholdMillis && MediaIdentifier.forLocalPath(video.path) !in played
+          }
+        FolderWithNewCount(folder, newCount)
+      }
+    }.flowOn(Dispatchers.Default)
+      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
   private val _pinnedNetworkFolders = MutableStateFlow<List<PinnedNetworkFolder>>(emptyList())
   val pinnedNetworkFolders: StateFlow<List<PinnedNetworkFolder>> = _pinnedNetworkFolders.asStateFlow()
 
-  /** Per-pin position ("i of n") and current-episode frame, keyed "connectionId:path". */
+  /** Per-pin position ("i of n") + continue-target path, keyed "connectionId:path". */
   data class PinProgress(
     val currentIndex: Int,
     val totalCount: Int,
-    val thumbnail: android.graphics.Bitmap?,
+    val currentPath: String?,
   )
 
-  private val _pinnedProgress = MutableStateFlow<Map<String, PinProgress>>(emptyMap())
-  val pinnedProgress: StateFlow<Map<String, PinProgress>> = _pinnedProgress.asStateFlow()
+  /** One listing per pin (fetched once); everything else updates reactively. */
+  private val _pinListings = MutableStateFlow<Map<String, List<app.marlboroadvance.mpvex.domain.network.NetworkFile>>>(emptyMap())
+
+  /**
+   * Watch progress for network files, keyed by playback key. A Room flow:
+   * the player's position saves land here and the shelf recomputes — no
+   * resume-time refresh.
+   */
+  val networkStates: StateFlow<Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>> =
+    playbackStateRepository
+      .observeNetworkPlaybackStates()
+      .map { states -> states.associateBy { it.mediaTitle } }
+      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+  /**
+   * Shelf state as a Room-driven flow: listings (fetched once per pin) ×
+   * playback states × recently-played history. Watching an episode moves the
+   * continue target and the i/n badge without any lifecycle hook.
+   */
+  val pinnedProgress: StateFlow<Map<String, PinProgress>> =
+    combine(
+      _pinnedNetworkFolders,
+      _pinListings,
+      networkStates,
+      app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps.observeRecentlyPlayed(limit = 50),
+    ) { folders, listings, states, recents ->
+      folders.associate { folder ->
+        val videos = listings[folder.progressKey()].orEmpty()
+        val progress =
+          if (videos.isEmpty()) {
+            PinProgress(0, 0, null)
+          } else {
+            val folderPrefix =
+              app.marlboroadvance.mpvex.domain.network.NetworkRecent
+                .recentPath(folder.connectionId, folder.path) + "/"
+            val scopedRecents =
+              recents
+                .filter { it.filePath.startsWith(folderPrefix) }
+                .map { it.fileName }
+            val index =
+              NetworkFolderQueue.continueTarget(videos, states, { file ->
+                app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, file.path)
+              }, scopedRecents)
+            PinProgress(index + 1, videos.size, videos[index].path)
+          }
+        folder.progressKey() to progress
+      }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
   // Only show loading on fresh install (when there's no cached data)
   private val _isLoading = MutableStateFlow(false)
@@ -131,21 +216,19 @@ class FolderListViewModel(
         }
       }.collect { folders ->
         _pinnedNetworkFolders.value = folders
-        // Resolve i/n + current-episode frame for pins we haven't yet.
+        // Fetch each pin's listing once (the only network access here);
+        // i/n + continue target then follow Room updates automatically.
         folders
-          .map { it.progressKey() }
-          .filter { it !in _pinnedProgress.value }
-          .forEach { key ->
-            val folder = folders.first { it.progressKey() == key }
+          .filter { it.progressKey() !in _pinListings.value }
+          .forEach { folder ->
             viewModelScope.launch(Dispatchers.IO) {
-              val progress = resolvePinProgress(folder) ?: return@launch
-              _pinnedProgress.update { it + (key to progress) }
-
-              // The first-frame extraction can take a while on big remote
-              // files — swap it in separately so the badge shows immediately.
-              resolvePinThumbnail(folder, progress.currentIndex - 1)?.let { bitmap ->
-                _pinnedProgress.update { it + (key to progress.copy(thumbnail = bitmap)) }
-              }
+              val connection = networkRepository.getConnectionById(folder.connectionId)
+              val listing =
+                connection?.let { networkRepository.listFiles(connection, folder.path).getOrNull() }
+                  ?.let { NetworkFolderQueue.orderedVideos(it) }
+              if (listing == null) return@launch // unreachable: retried on the next pins emission
+              _pinListings.update { it + (folder.progressKey() to listing) }
+              extractFirstFrameIfNeeded(folder, listing)
             }
           }
       }
@@ -191,8 +274,6 @@ class FolderListViewModel(
         previousFolderCount = filteredFolders.size
 
         _videoFolders.value = filteredFolders
-        // Calculate new video counts for each folder
-        calculateNewVideoCounts(filteredFolders)
 
         // Save to cache for next app launch (save unfiltered list)
         saveFoldersToCache(_allVideoFolders.value)
@@ -216,69 +297,26 @@ class FolderListViewModel(
       .map { it.fileName }
   }
 
-  /** Re-resolve pins, keeping the previous entry visible until the new one lands. */
-  fun refreshPinnedProgress() {
-    val currentKeys = _pinnedNetworkFolders.value.map { it.progressKey() }.toSet()
-    _pinnedNetworkFolders.value.forEach { folder ->
-      viewModelScope.launch(Dispatchers.IO) {
-        val progress = resolvePinProgress(folder) ?: return@launch
-        _pinnedProgress.update { it + (folder.progressKey() to progress) }
-      }
-    }
-    // Drop entries for pins that no longer exist
-    _pinnedProgress.update { it.filterKeys { key -> key in currentKeys } }
-  }
-
-  private suspend fun resolvePinThumbnail(
+  /**
+   * A continue target with no stored frame was never played on this device:
+   * extract its first frame once; the put() broadcast updates every observer.
+   */
+  private fun extractFirstFrameIfNeeded(
     folder: PinnedNetworkFolder,
-    index: Int,
-  ): android.graphics.Bitmap? {
-    val connection = networkRepository.getConnectionById(folder.connectionId) ?: return null
-    val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return null
-    val videos = NetworkFolderQueue.orderedVideos(listing)
-    val target = videos.getOrNull(index) ?: return null
-    return app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
-      .get(getApplication())
-      .cached(folder.connectionId, target.path)
-  }
-
-  private suspend fun resolvePinProgress(folder: PinnedNetworkFolder): PinProgress? {
-    val connection = networkRepository.getConnectionById(folder.connectionId) ?: return null
-    val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return null
-    val videos = NetworkFolderQueue.orderedVideos(listing)
-    if (videos.isEmpty()) {
-      return PinProgress(currentIndex = 0, totalCount = 0, thumbnail = null)
-    }
-
-    // Continue target from the watch frontier (playback-state store — local,
-    // instant). The frame comes from the thumbnail cache (captured during
-    // playback) — never fetched here, so the shelf renders instantly.
-    val states = playbackStateRepository.getNetworkPlaybackStates().associateBy { it.mediaTitle }
-    val index =
-      NetworkFolderQueue.continueTarget(videos, states, { file ->
-        app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, file.path)
-      }, folderScopedRecentNames(folder))
-    val target = videos[index]
-    val thumbnail =
-      app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
-        .get(getApplication())
-        .cached(folder.connectionId, target.path)
-
-    val result = PinProgress(currentIndex = index + 1, totalCount = videos.size, thumbnail = thumbnail)
-
-    // No stored frame (episode never viewed on this device): fetch its first
-    // frame once in the background; the badge is already live either way.
-    if (thumbnail == null) {
-      viewModelScope.launch(Dispatchers.IO) {
-        playbackStarter
-          .extractFrameById(folder.connectionId, target)
-          ?.let { bitmap ->
-            _pinnedProgress.update { it + (folder.progressKey() to result.copy(thumbnail = bitmap)) }
-          }
+    videos: List<app.marlboroadvance.mpvex.domain.network.NetworkFile>,
+  ) {
+    if (videos.isEmpty()) return
+    viewModelScope.launch(Dispatchers.IO) {
+      val index =
+        NetworkFolderQueue.continueTarget(videos, networkStates.value, { file ->
+          app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, file.path)
+        }, folderScopedRecentNames(folder))
+      val target = videos[index]
+      val cache = app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache.get(getApplication())
+      if (cache.cached(folder.connectionId, target.path) == null) {
+        playbackStarter.extractFrameById(folder.connectionId, target)
       }
     }
-
-    return result
   }
 
   /**
@@ -289,21 +327,26 @@ class FolderListViewModel(
   fun continuePinnedPlaylist(folder: PinnedNetworkFolder) {
     viewModelScope.launch {
       val connection = networkRepository.getConnectionById(folder.connectionId)
-      val listing = connection?.let { networkRepository.listFiles(connection, folder.path).getOrNull() }
-      val videos = listing?.let { NetworkFolderQueue.orderedVideos(it) }
-      if (connection == null || videos.isNullOrEmpty()) {
+      // Prefer the cached listing; fall back to the network when missing.
+      val cachedListing = _pinListings.value[folder.progressKey()]
+      val listing =
+        cachedListing
+          ?: connection?.let { networkRepository.listFiles(connection, folder.path).getOrNull() }
+            ?.let { NetworkFolderQueue.orderedVideos(it) }
+      if (connection == null || listing.isNullOrEmpty()) {
         Log.e(TAG, "Cannot continue playlist for ${folder.name}: folder not reachable")
         return@launch
       }
+      val videos = if (cachedListing != null) cachedListing else listing
 
-      val states = playbackStateRepository.getNetworkPlaybackStates().associateBy { it.mediaTitle }
       val index =
-        NetworkFolderQueue.continueTarget(videos, states, { file ->
+        NetworkFolderQueue.continueTarget(videos, networkStates.value, { file ->
           app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, file.path)
         }, folderScopedRecentNames(folder))
       val target = videos[index]
+      val fullListing = connection.let { networkRepository.listFiles(connection, folder.path).getOrNull() }
       playbackStarter
-        .play(folder.connectionId, target, listing)
+        .play(folder.connectionId, target, fullListing ?: videos)
         .onFailure { e -> Log.e(TAG, "Failed to start playback for ${folder.name}", e) }
     }
   }
@@ -380,55 +423,6 @@ class FolderListViewModel(
     }
   }
 
-  private fun calculateNewVideoCounts(folders: List<VideoFolder>) {
-    viewModelScope.launch(Dispatchers.IO) {
-      try {
-        val showLabel = appearancePreferences.showUnplayedOldVideoLabel.get()
-        if (!showLabel) {
-          // If feature is disabled, just return folders with 0 count
-          _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
-          return@launch
-        }
-
-        val thresholdDays = appearancePreferences.unplayedOldVideoDays.get()
-        val thresholdMillis = thresholdDays * 24 * 60 * 60 * 1000L
-        val currentTime = System.currentTimeMillis()
-
-        val foldersWithCounts = folders.map { folder ->
-          try {
-            // Get all videos in this folder
-            val videos = app.marlboroadvance.mpvex.repository.MediaFileRepository
-              .getVideosInFolder(getApplication(), folder.bucketId)
-
-            // Count new unplayed videos
-            val newCount = videos.count { video ->
-              // Check if video was modified within threshold days
-              val videoAge = currentTime - (video.dateModified * 1000)
-              val isRecent = videoAge <= thresholdMillis
-
-              // Check if video has been played
-              // A video is considered "played" if it has any playback state
-              val playbackState = playbackStateRepository.getVideoDataByTitle(MediaIdentifier.forLocalPath(video.path))
-              val isUnplayed = playbackState == null
-
-              isRecent && isUnplayed
-            }
-
-            FolderWithNewCount(folder, newCount)
-          } catch (e: Exception) {
-            Log.e(TAG, "Error counting new videos for folder ${folder.name}", e)
-            FolderWithNewCount(folder, 0)
-          }
-        }
-
-        _foldersWithNewCount.value = foldersWithCounts
-      } catch (e: Exception) {
-        Log.e(TAG, "Error calculating new video counts", e)
-        _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
-      }
-    }
-  }
-
   override fun refresh() {
     Log.d(TAG, "Refreshing folder list")
     _isLoading.value = true
@@ -458,14 +452,6 @@ class FolderListViewModel(
     } catch (e: Exception) {
       Log.e(TAG, "Failed to trigger media scan", e)
     }
-  }
-
-  /**
-   * Recalculate new video counts without refreshing the entire folder list
-   * Useful when returning to the screen after playing videos
-   */
-  fun recalculateNewVideoCounts() {
-    calculateNewVideoCounts(_videoFolders.value)
   }
 
 

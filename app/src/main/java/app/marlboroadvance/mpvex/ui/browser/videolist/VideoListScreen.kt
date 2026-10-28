@@ -129,7 +129,6 @@ data class VideoListScreen(
     val backstack = LocalBackStack.current
     val browserPreferences = koinInject<BrowserPreferences>()
     val playerPreferences = koinInject<PlayerPreferences>()
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val navigationBarHeight = app.marlboroadvance.mpvex.ui.browser.LocalNavigationBarHeight.current
 
     // ViewModel
@@ -248,25 +247,6 @@ data class VideoListScreen(
     // Predictive back: Only intercept when in selection mode
     BackHandler(enabled = selectionManager.isInSelectionMode) {
       selectionManager.clear()
-    }
-
-    // Listen for lifecycle resume events to refresh playback progress when returning from player
-    DisposableEffect(lifecycleOwner) {
-      var isFirstResume = true
-      val observer =
-        LifecycleEventObserver { _, event ->
-          if (event == Lifecycle.Event.ON_RESUME) {
-            if (isFirstResume) {
-              isFirstResume = false
-            } else {
-              viewModel.refreshPlaybackInfo()
-            }
-          }
-        }
-      lifecycleOwner.lifecycle.addObserver(observer)
-      onDispose {
-        lifecycleOwner.lifecycle.removeObserver(observer)
-      }
     }
 
     Scaffold(

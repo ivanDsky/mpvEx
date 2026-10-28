@@ -18,6 +18,8 @@ import app.marlboroadvance.mpvex.domain.network.NetworkProtocol
 import app.marlboroadvance.mpvex.repository.NetworkRepository
 import app.marlboroadvance.mpvex.utils.sort.SortUtils
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -48,18 +50,6 @@ class NetworkBrowserViewModel(
   private val _pinnedPaths = MutableStateFlow<Set<String>>(emptySet())
   val pinnedPaths: StateFlow<Set<String>> = _pinnedPaths.asStateFlow()
 
-  /** Playback states for network files, keyed by [NetworkRecent.playbackKey]. */
-  private val _playbackStates =
-    MutableStateFlow<Map<String, PlaybackStateEntity>>(emptyMap())
-
-  /** Bumped when cached thumbnails should be re-read (e.g. after playback). */
-  private val _thumbnailRefreshKey = MutableStateFlow(0)
-  val thumbnailRefreshKey: StateFlow<Int> = _thumbnailRefreshKey.asStateFlow()
-
-  fun refreshThumbnails() {
-    _thumbnailRefreshKey.value += 1
-  }
-
   init {
     viewModelScope.launch {
       pinnedFolderRepository
@@ -67,19 +57,18 @@ class NetworkBrowserViewModel(
         .map { pins -> pins.map { it.path }.toSet() }
         .collect { _pinnedPaths.value = it }
     }
-
-    refreshPlaybackStates()
   }
 
-  /** Re-read watch progress; called on load and when returning from the player. */
-  fun refreshPlaybackStates() {
-    viewModelScope.launch {
-      _playbackStates.value =
-        playbackStateRepository
-          .getNetworkPlaybackStates()
-          .associateBy { it.mediaTitle }
-    }
-  }
+  /**
+   * Watch progress for network files, keyed by [NetworkRecent.playbackKey].
+   * A Room flow: every position save in the player lands here and every
+   * progress bar recomposes — no resume-time refresh.
+   */
+  val playbackStates: StateFlow<Map<String, PlaybackStateEntity>> =
+    playbackStateRepository
+      .observeNetworkPlaybackStates()
+      .map { states -> states.associateBy { it.mediaTitle } }
+      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
   /**
    * Saved resume position of an IN-PROGRESS network file in seconds, or null
@@ -87,16 +76,8 @@ class NetworkBrowserViewModel(
    */
 
   /** Watched fraction (0f..1f exclusive) of a network file, or null when unwatched/finished. */
-  fun progressFraction(file: NetworkFile): Float? {
-    val state = _playbackStates.value[NetworkRecent.playbackKey(connectionId, file.path)] ?: return null
-    if (state.lastPosition <= 0) return null
-    val total = state.lastPosition + state.timeRemaining
-    if (total <= 0) return null
-    val fraction = (state.lastPosition.toFloat() / total).coerceIn(0f, 1f)
-    // Any started episode shows its bar — even a thin one — so "I'm in the
-    // middle" is visible; fully watched episodes stay clean.
-    return fraction.takeIf { it < 0.99f }
-  }
+  fun progressFraction(file: NetworkFile): Float? =
+    progressFractionOf(playbackStates.value, connectionId, file)
 
   /** Cached frame, or extract the first frame through the starter. */
   suspend fun thumbnailFor(file: NetworkFile): android.graphics.Bitmap? {
@@ -125,7 +106,6 @@ class NetworkBrowserViewModel(
    * Load files in the current directory
    */
   fun loadFiles() {
-    refreshPlaybackStates()
     viewModelScope.launch {
       _isLoading.value = true
       _error.value = null
@@ -187,4 +167,20 @@ class NetworkBrowserViewModel(
         }
       }
   }
+}
+
+/** Watched fraction from a states map (shared by the browser screen rows). */
+fun progressFractionOf(
+  states: Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>,
+  connectionId: Long,
+  file: NetworkFile,
+): Float? {
+  val state = states[app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(connectionId, file.path)] ?: return null
+  if (state.lastPosition <= 0) return null
+  val total = state.lastPosition + state.timeRemaining
+  if (total <= 0) return null
+  val fraction = (state.lastPosition.toFloat() / total).coerceIn(0f, 1f)
+  // Any started episode shows its bar — even a thin one — so "I'm in the
+  // middle" is visible; fully watched episodes stay clean.
+  return fraction.takeIf { it < 0.99f }
 }

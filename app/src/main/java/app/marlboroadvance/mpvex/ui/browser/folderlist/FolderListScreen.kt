@@ -303,20 +303,6 @@ object FolderListScreen : Screen {
       onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // When the user navigates back from VideoListScreen (or any child screen),
-    // the backstack shrinks and this screen reappears. The Activity lifecycle
-    // does NOT fire ON_RESUME in this case (all screens are in the same Activity),
-    // so we watch backstack.size directly and recalculate new-video counts
-    // immediately so folder badges reflect videos played during the last session.
-    val backstackSize = backstack.size
-    LaunchedEffect(backstackSize) {
-      // Only recalculate when we're at the top (FolderListScreen is visible),
-      // i.e., when the count drops back to 1 (just MainScreen + FolderList).
-      // Using > 0 guard to avoid running on initial composition before any
-      // child screens have been pushed.
-      viewModel.recalculateNewVideoCounts()
-    }
-
     // Optimized back handler for immediate response
     val shouldHandleBack = selectionManager.isInSelectionMode || isSearching || isFabExpanded.value
     androidx.activity.compose.BackHandler(enabled = shouldHandleBack) {
@@ -534,7 +520,6 @@ object FolderListScreen : Screen {
           PinnedNetworkFoldersSection(
             folders = pinnedNetworkFolders,
             progress = pinnedProgress,
-            onRefreshProgress = { viewModel.refreshPinnedProgress() },
             onFolderClick = { viewModel.continuePinnedPlaylist(it) },
             onFolderLongClick = { folder ->
               backstack.add(
@@ -1241,23 +1226,12 @@ private suspend fun searchFoldersAndVideos(
 private fun PinnedNetworkFoldersSection(
   folders: List<app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder>,
   progress: Map<String, app.marlboroadvance.mpvex.ui.browser.folderlist.FolderListViewModel.PinProgress>,
-  onRefreshProgress: () -> Unit,
   onFolderClick: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
   onFolderLongClick: (app.marlboroadvance.mpvex.ui.browser.folderlist.PinnedNetworkFolder) -> Unit,
 ) {
   if (folders.isEmpty()) return
 
-  val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-  androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
-    val observer =
-      androidx.lifecycle.LifecycleEventObserver { _, event ->
-        if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-          onRefreshProgress()
-        }
-      }
-    lifecycleOwner.lifecycle.addObserver(observer)
-    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-  }
+  val thumbnailCache = org.koin.compose.koinInject<app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache>()
 
   Column(modifier = Modifier.fillMaxWidth()) {
     Text(
@@ -1297,7 +1271,14 @@ private fun PinnedNetworkFoldersSection(
             // Episode frame as the card background, dimmed for legibility.
             // While the frame extracts, the card is just the dim surface —
             // no placeholder icon.
-            val currentBitmap = pinProgress?.thumbnail
+            // Live thumbnail: observe the cache for the continue-target file —
+            // player captures arrive here without any refresh hook.
+            val currentBitmap =
+              pinProgress?.currentPath?.let { path ->
+                thumbnailCache
+                  .observe(folder.connectionId, path)
+                  .collectAsState(initial = null).value
+              }
             if (currentBitmap != null) {
               Image(
                 bitmap = currentBitmap.asImageBitmap(),
