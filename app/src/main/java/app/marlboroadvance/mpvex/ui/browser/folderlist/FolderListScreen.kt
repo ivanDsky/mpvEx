@@ -1273,9 +1273,14 @@ private fun PinnedNetworkFoldersSection(
     ) {
       items(folders) { folder ->
         val pinProgress = progress["${folder.connectionId}:${folder.path}"]
+        // Adaptive card size: ~2 cards per screen on phones AND tablets
+        val screenWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+        val cardWidth = ((screenWidth * 0.45f).dp).coerceIn(180.dp, 300.dp)
+        val cardHeight = cardWidth * 0.92f
         Card(
           modifier = Modifier
-            .width(210.dp)
+            .width(cardWidth)
+            .heightIn(min = cardHeight)
             .combinedClickable(
               onClick = { onFolderClick(folder) },
               onLongClick = { onFolderLongClick(folder) },
@@ -1287,7 +1292,7 @@ private fun PinnedNetworkFoldersSection(
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .heightIn(min = 192.dp),
+              .heightIn(min = cardHeight),
           ) {
             // Episode frame as the card background, dimmed for legibility.
             // While the frame extracts, the card is just the dim surface —
