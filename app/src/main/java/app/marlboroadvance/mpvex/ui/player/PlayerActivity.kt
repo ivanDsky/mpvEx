@@ -37,6 +37,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity
 import app.marlboroadvance.mpvex.databinding.PlayerLayoutBinding
+import app.marlboroadvance.mpvex.domain.network.NetworkRecent
 import app.marlboroadvance.mpvex.domain.playbackstate.repository.PlaybackStateRepository
 import app.marlboroadvance.mpvex.preferences.AdvancedPreferences
 import app.marlboroadvance.mpvex.preferences.AudioPreferences
@@ -2194,7 +2195,15 @@ class PlayerActivity :
         return@runCatching
       }
 
+      // Network files played via the proxy: store a stable identity instead
+      // of the ephemeral proxy URL, so history and replay survive restarts.
+      val networkFilePath = intent.getStringExtra("network_file_path")
+      val networkConnectionId = intent.getLongExtra("network_connection_id", -1L)
+
       val filePath =
+        if (networkFilePath != null && networkConnectionId != -1L) {
+          NetworkRecent.recentPath(networkConnectionId, networkFilePath)
+        } else {
         when (uri.scheme) {
           "file" -> {
             uri.path ?: uri.toString()
@@ -2222,6 +2231,7 @@ class PlayerActivity :
             uri.toString()
           }
         }
+          }
 
       val launchSource =
         when {

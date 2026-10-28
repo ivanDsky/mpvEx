@@ -105,7 +105,7 @@ class NetworkPlaybackStarter(
         streamId = streamId,
         connection = connection,
         filePath = file.path,
-        fileSize = file.size,
+        fileSize = if (file.size > 0) file.size else -1L,
         mimeType = file.mimeType ?: "video/mp4",
       )
     return Uri.parse(if (withFileName) "$base/${URLEncoder.encode(file.name, "UTF-8")}" else base)

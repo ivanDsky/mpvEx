@@ -187,9 +187,15 @@ class FolderListViewModel(
         return@launch
       }
 
+      // Only history entries that live inside this pinned folder, so another
+      // show's identically-named episode can't hijack the resume target.
+      val folderPrefix =
+        app.marlboroadvance.mpvex.domain.network.NetworkRecent
+          .recentPath(folder.connectionId, folder.path) + "/"
       val recentNames =
         app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps
           .getRecentlyPlayed(limit = 50)
+          .filter { it.filePath.startsWith(folderPrefix) }
           .map { it.fileName }
       val target = videos[NetworkFolderQueue.resumeIndex(videos, recentNames)]
       playbackStarter

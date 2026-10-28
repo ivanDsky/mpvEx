@@ -7,6 +7,14 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import app.marlboroadvance.mpvex.BuildConfig
 import app.marlboroadvance.mpvex.domain.media.model.Video
+import app.marlboroadvance.mpvex.domain.network.NetworkFile
+import app.marlboroadvance.mpvex.domain.network.NetworkRecent
+import app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkPlaybackStarter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import app.marlboroadvance.mpvex.ui.player.PlayerActivity
 import app.marlboroadvance.mpvex.utils.history.RecentlyPlayedOps
 import `is`.xyz.mpv.Utils
@@ -35,7 +43,9 @@ import java.io.File
  * External apps use ACTION_SEND/ACTION_VIEW intents directly to PlayerActivity,
  * bypassing MediaUtils.
  */
-object MediaUtils {
+object MediaUtils : KoinComponent {
+  private val playbackStarter: app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkPlaybackStarter by inject()
+
   /**
    * Play video content from any source.
    *
@@ -72,6 +82,23 @@ object MediaUtils {
 
         is String -> {
           if (source.isBlank()) return
+          // Network history entries: resolve the stable identity back to a
+          // live proxy stream and launch with the folder queue.
+          val networkRecent = NetworkRecent.parse(source)
+          if (networkRecent != null) {
+            CoroutineScope(Dispatchers.Main).launch {
+              playbackStarter.play(
+                networkRecent.connectionId,
+                NetworkFile(
+                  name = networkRecent.fileName,
+                  path = networkRecent.path,
+                  size = 0,
+                  isDirectory = false,
+                ),
+              )
+            }
+            return
+          }
           // Handle file paths with # characters properly
           if (source.startsWith("/") || source.startsWith("file://")) {
             // It's a local file path - create URI safely
