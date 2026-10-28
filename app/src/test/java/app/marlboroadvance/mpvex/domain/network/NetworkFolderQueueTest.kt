@@ -157,4 +157,38 @@ class NetworkFolderQueueTest {
 
     assertEquals(0, NetworkFolderQueue.continueIndex(siblings, states) { it.path })
   }
+
+  // ---- continue target (recency first, frontier fallback) ----
+
+  @Test
+  fun `continue target is the most recently played episode even when watching backwards`() {
+    val siblings = listOf(episode("Episode 1"), episode("Episode 2"), episode("Episode 3"))
+    // opened 8->... here: watched 3, then went back to 2 (newest first)
+    val states =
+      mapOf(
+        "Show/Episode 2" to watched("Episode 2", finished = false),
+        "Show/Episode 3" to watched("Episode 3", finished = true),
+      )
+    val keys: (NetworkFile) -> String = { app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(1, it.path) }
+    val recentNames = listOf("Episode 2", "Episode 3") // newest first
+
+    val index = NetworkFolderQueue.continueTarget(siblings, states, keys, recentNames)
+
+    assertEquals(1, index) // Episode 2 — not the natural-order last (3)
+  }
+
+  @Test
+  fun `continue target falls back to the watch frontier without history`() {
+    val siblings = listOf(episode("Episode 1"), episode("Episode 2"), episode("Episode 3"))
+    val states =
+      mapOf(
+        "network_1_${"Show/Episode 1".hashCode()}" to watched("Episode 1", finished = true),
+        "network_1_${"Show/Episode 2".hashCode()}" to watched("Episode 2", finished = true),
+      )
+    val keys: (NetworkFile) -> String = { app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(1, it.path) }
+
+    val index = NetworkFolderQueue.continueTarget(siblings, states, keys, recentNames = emptyList())
+
+    assertEquals(2, index) // Episode 3 — next unwatched
+  }
 }

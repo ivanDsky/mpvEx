@@ -252,10 +252,11 @@ class FolderListViewModel(
     // instant). The frame comes from the thumbnail cache (captured during
     // playback) — never fetched here, so the shelf renders instantly.
     val states = playbackStateRepository.getNetworkPlaybackStates().associateBy { it.mediaTitle }
+    val recentNames = folderScopedRecentNames(folder)
     val index =
-      NetworkFolderQueue.continueIndex(videos, states) { file ->
+      NetworkFolderQueue.continueTarget(videos, states, { file ->
         app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, file.path)
-      }
+      }, recentNames)
     val thumbnail =
       app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
         .get(getApplication(), playbackStarter)
@@ -279,8 +280,12 @@ class FolderListViewModel(
         return@launch
       }
 
-      val recentNames = folderScopedRecentNames(folder)
-      val target = videos[NetworkFolderQueue.resumeIndex(videos, recentNames)]
+      val states = playbackStateRepository.getNetworkPlaybackStates().associateBy { it.mediaTitle }
+      val index =
+        NetworkFolderQueue.continueTarget(videos, states, { file ->
+          app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, file.path)
+        }, folderScopedRecentNames(folder))
+      val target = videos[index]
       playbackStarter
         .play(folder.connectionId, target, listing)
         .onFailure { e -> Log.e(TAG, "Failed to start playback for ${folder.name}", e) }

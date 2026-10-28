@@ -71,12 +71,39 @@ object NetworkFolderQueue {
 
     // The latest episode with watch history is where the user left off:
     // still in progress -> resume it; finished -> continue with the next.
+    progress.forEach { println("DIAG idx=${it.index} started=${it.started} finished=${it.finished}") }
     val lastStarted = progress.lastOrNull { it.started } ?: return 0
     return if (!lastStarted.finished) {
       lastStarted.index
     } else {
       progress.getOrNull(lastStarted.index + 1)?.index ?: 0
     }
+  }
+
+  /**
+   * Index of the episode to continue a folder from.
+   *
+   * Resolution order:
+   * 1. the most recently PLAYED sibling (matched by file name against
+   *    [recentNames], newest first) — handles watching backwards or jumping
+   *    around, which an order-based scan cannot;
+   * 2. otherwise the watch frontier ([continueIndex]): the latest in-progress
+   *    episode, or the next one after a finished run;
+   * 3. otherwise the first episode.
+   */
+  fun continueTarget(
+    siblings: List<NetworkFile>,
+    states: Map<String, app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity>,
+    playbackKeyOf: (NetworkFile) -> String,
+    recentNames: List<String>,
+  ): Int {
+    fun normalize(name: String) = name.substringBeforeLast('.', name).lowercase()
+
+    recentNames.forEach { recent ->
+      val match = siblings.indexOfFirst { normalize(it.name) == normalize(recent) }
+      if (match != -1) return match
+    }
+    return continueIndex(siblings, states, playbackKeyOf)
   }
 
   /**
