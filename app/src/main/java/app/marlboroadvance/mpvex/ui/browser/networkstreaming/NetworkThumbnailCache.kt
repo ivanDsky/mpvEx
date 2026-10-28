@@ -16,9 +16,15 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Frame thumbnails for network files: memory LRU, disk cache keyed by
- * connection+path (stable across restarts), extraction through the streaming
- * proxy serialized so a big folder can't hammer the server.
+ * Frame store for network files.
+ *
+ * Two sources feed it:
+ * - extraction through the streaming proxy (first frames, fast even on
+ *   large files) for episodes never played;
+ * - frame grabs taken by the player DURING playback, which land at the
+ *   watched position and override the first-frame entry.
+ *
+ * Reads are memory/disk only — nothing here touches the network on startup.
  */
 class NetworkThumbnailCache private constructor(
   private val context: Context,
@@ -33,35 +39,44 @@ class NetworkThumbnailCache private constructor(
   /** Cached frame, if any (memory or disk) — never touches the network. */
   fun cached(
     connectionId: Long,
-    file: NetworkFile,
-  ): Bitmap? = memoryCache.get(memoryKey(connectionId, file)) ?: loadFromDisk(connectionId, file)
+    path: String,
+  ): Bitmap? = memoryCache.get(memoryKey(connectionId, path)) ?: loadFromDisk(connectionId, path)
 
-  /** Cached frame, or extract one through the streaming proxy at [positionSec]. */
+  /** Store a frame (e.g. grabbed by the player during playback). */
+  fun put(
+    connectionId: Long,
+    path: String,
+    bitmap: Bitmap,
+  ) {
+    memoryCache.put(memoryKey(connectionId, path), bitmap)
+    writeToDisk(connectionId, path, bitmap)
+  }
+
+  /**
+   * Cached frame, or extract the first frame through the streaming proxy
+   * (serialized so a big folder can't hammer the server).
+   */
   suspend fun getOrLoad(
     connection: NetworkConnection,
     file: NetworkFile,
-    positionSec: Double = PREFERRED_POSITION_SECONDS,
   ): Bitmap? =
     withContext(Dispatchers.IO) {
-      cached(connection.id, file)?.let { return@withContext it }
+      cached(connection.id, file.path)?.let { return@withContext it }
 
       extractMutex.withLock {
-        cached(connection.id, file)?.let { return@withContext it }
+        cached(connection.id, file.path)?.let { return@withContext it }
 
         val stream = playbackStarter.registerOneOffStream(connection, file)
         val bitmap =
           runCatching {
             FastThumbnails.generateAsync(
               stream.url,
-              positionSec,
+              PREFERRED_POSITION_SECONDS,
               DIMENSION,
               useHwDec = false,
             )
           }.getOrNull()
-        bitmap?.let {
-          memoryCache.put(memoryKey(connection.id, file), it)
-          writeToDisk(connection.id, file, it)
-        }
+        bitmap?.let { put(connection.id, file.path, it) }
         playbackStarter.unregisterStream(stream.streamId)
         bitmap
       }
@@ -69,30 +84,29 @@ class NetworkThumbnailCache private constructor(
 
   private fun memoryKey(
     connectionId: Long,
-    file: NetworkFile,
-  ): String = "$connectionId|${file.path}"
+    path: String,
+  ): String = "$connectionId|$path"
 
   private fun diskFile(
     connectionId: Long,
-    file: NetworkFile,
-  ): File =
-    File(File(context.cacheDir, "network_thumbs"), "${connectionId}_${file.path.hashCode()}.jpg")
+    path: String,
+  ): File = File(File(context.cacheDir, "network_thumbs"), "${connectionId}_${path.hashCode()}.jpg")
 
   private fun loadFromDisk(
     connectionId: Long,
-    file: NetworkFile,
+    path: String,
   ): Bitmap? =
     runCatching {
-      diskFile(connectionId, file).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.absolutePath) }
+      diskFile(connectionId, path).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.absolutePath) }
     }.getOrNull()
 
   private fun writeToDisk(
     connectionId: Long,
-    file: NetworkFile,
+    path: String,
     bitmap: Bitmap,
   ) {
     runCatching {
-      diskFile(connectionId, file).outputStream().use { out ->
+      diskFile(connectionId, path).outputStream().use { out ->
         bitmap.compress(CompressFormat.JPEG, JPEG_QUALITY, out)
       }
     }
@@ -117,10 +131,9 @@ class NetworkThumbnailCache private constructor(
   }
 
   companion object {
-    private const val DIMENSION = 512
+    private const val DIMENSION = 256
     private const val JPEG_QUALITY = 85
-    const val DEFAULT_POSITION_SECONDS = 2.0
-    private const val PREFERRED_POSITION_SECONDS = DEFAULT_POSITION_SECONDS
+    private const val PREFERRED_POSITION_SECONDS = 2.0
     private const val DISK_CACHE_BYTES = 64L * 1024 * 1024
 
     @Volatile

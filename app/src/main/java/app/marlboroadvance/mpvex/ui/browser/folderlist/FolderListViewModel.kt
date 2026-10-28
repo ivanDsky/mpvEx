@@ -141,8 +141,8 @@ class FolderListViewModel(
               val progress = resolvePinProgress(folder) ?: return@launch
               _pinnedProgress.update { it + (key to progress) }
 
-              // The frame extraction can take a while on big remote files —
-              // swap it in separately so the badge shows immediately.
+              // The first-frame extraction can take a while on big remote
+              // files — swap it in separately so the badge shows immediately.
               resolvePinThumbnail(folder, progress.currentIndex - 1)?.let { bitmap ->
                 _pinnedProgress.update { it + (key to progress.copy(thumbnail = bitmap)) }
               }
@@ -227,23 +227,6 @@ class FolderListViewModel(
     }
   }
 
-  private suspend fun resolvePinProgress(folder: PinnedNetworkFolder): PinProgress? {
-    val connection = networkRepository.getConnectionById(folder.connectionId) ?: return null
-    val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return null
-    val videos = NetworkFolderQueue.orderedVideos(listing)
-    if (videos.isEmpty()) return PinProgress(currentIndex = 0, totalCount = 0, thumbnail = null)
-
-    // Continue target from the watch frontier (playback-state store — local,
-    // instant), then the frame extracts in the background.
-    val states = playbackStateRepository.getNetworkPlaybackStates().associateBy { it.mediaTitle }
-    val index =
-      NetworkFolderQueue.continueIndex(videos, states) { file ->
-        app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, file.path)
-      }
-
-    return PinProgress(currentIndex = index + 1, totalCount = videos.size, thumbnail = null)
-  }
-
   private suspend fun resolvePinThumbnail(
     folder: PinnedNetworkFolder,
     index: Int,
@@ -252,17 +235,31 @@ class FolderListViewModel(
     val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return null
     val videos = NetworkFolderQueue.orderedVideos(listing)
     val target = videos.getOrNull(index) ?: return null
-    val positionSec =
-      playbackStateRepository
-        .getVideoDataByTitle(
-          app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, target.path),
-        )
-        ?.lastPosition
-        ?.takeIf { it > 0 }
-        ?.toDouble() ?: 2.0
     return app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
       .get(getApplication(), playbackStarter)
-      .getOrLoad(connection, target, positionSec)
+      .getOrLoad(connection, target)
+  }
+
+  private suspend fun resolvePinProgress(folder: PinnedNetworkFolder): PinProgress? {
+    val connection = networkRepository.getConnectionById(folder.connectionId) ?: return null
+    val listing = networkRepository.listFiles(connection, folder.path).getOrNull() ?: return null
+    val videos = NetworkFolderQueue.orderedVideos(listing)
+    if (videos.isEmpty()) return PinProgress(currentIndex = 0, totalCount = 0, thumbnail = null)
+
+    // Continue target from the watch frontier (playback-state store — local,
+    // instant). The frame comes from the thumbnail cache (captured during
+    // playback) — never fetched here, so the shelf renders instantly.
+    val states = playbackStateRepository.getNetworkPlaybackStates().associateBy { it.mediaTitle }
+    val index =
+      NetworkFolderQueue.continueIndex(videos, states) { file ->
+        app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, file.path)
+      }
+    val thumbnail =
+      app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
+        .get(getApplication(), playbackStarter)
+        .cached(folder.connectionId, videos[index].path)
+
+    return PinProgress(currentIndex = index + 1, totalCount = videos.size, thumbnail = thumbnail)
   }
 
   /**

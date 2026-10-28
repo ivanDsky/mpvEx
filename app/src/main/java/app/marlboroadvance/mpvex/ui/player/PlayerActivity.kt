@@ -108,6 +108,7 @@ class PlayerActivity :
    * Repository for managing playback state.
    */
   private val playbackStateRepository: PlaybackStateRepository by inject()
+  private val playbackStarter: app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkPlaybackStarter by inject()
 
   /**
    * Repository for managing playlists.
@@ -235,6 +236,18 @@ class PlayerActivity :
       override fun run() {
         if (viewModel.paused != true) {
           runCatching { saveVideoPlaybackState(fileName) }
+
+          // Capture the current frame for the network file's thumbnail —
+          // cached now, so nothing needs fetching on startup.
+          if (currentNetworkFilePath != null && currentNetworkConnectionId != -1L) {
+            runCatching {
+              MPVLib.grabThumbnail(512)?.let { frame ->
+                app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache
+                  .get(applicationContext, playbackStarter)
+                  .put(currentNetworkConnectionId, currentNetworkFilePath!!, frame)
+              }
+            }
+          }
         }
         periodicSaveHandler.postDelayed(this, POSITION_SAVE_INTERVAL_MS)
       }
