@@ -11,9 +11,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -116,6 +120,25 @@ data class NetworkBrowserScreen(
           onSelectAll = null,
           onInvertSelection = null,
           onDeselectAll = null,
+          additionalActions = {
+            // Pin the folder you are IN — filled pin = pinned, tap to unpin.
+            val currentFolderPinned = currentPath in pinnedPaths
+            IconButton(onClick = {
+              viewModel.togglePin(
+                NetworkFile(
+                  name = currentPath.substringAfterLast('/').ifBlank { connectionName },
+                  path = currentPath,
+                  size = 0,
+                  isDirectory = true,
+                ),
+              )
+            }) {
+              Icon(
+                imageVector = if (currentFolderPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                contentDescription = if (currentFolderPinned) "Unpin from Home" else "Pin to Home",
+              )
+            }
+          },
         )
       },
     ) { padding ->

@@ -357,6 +357,13 @@ class FolderListViewModel(
     }
   }
 
+  /** Remove a shelf pin directly from the Home tab. */
+  fun unpinPinnedFolder(folder: PinnedNetworkFolder) {
+    viewModelScope.launch {
+      pinnedFolderRepository.unpin(folder.connectionId, folder.path)
+    }
+  }
+
   private fun loadCachedFolders(): Boolean {
     var hasCachedData = false
     val prefs =

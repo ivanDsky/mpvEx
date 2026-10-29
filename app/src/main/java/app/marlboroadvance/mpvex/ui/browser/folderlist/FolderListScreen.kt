@@ -521,15 +521,7 @@ object FolderListScreen : Screen {
             folders = pinnedNetworkFolders,
             progress = pinnedProgress,
             onFolderClick = { viewModel.continuePinnedPlaylist(it) },
-            onFolderLongClick = { folder ->
-              backstack.add(
-                app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkBrowserScreen(
-                  connectionId = folder.connectionId,
-                  connectionName = folder.connectionName,
-                  currentPath = folder.path,
-                ),
-              )
-            },
+            onFolderLongClick = { viewModel.unpinPinnedFolder(it) },
           )
           Box(modifier = Modifier.weight(1f)) {
                         when (permissionState.status) {
@@ -1219,8 +1211,9 @@ private suspend fun searchFoldersAndVideos(
 /**
  * "Network folders" shelf at the top of the Home tab: pinned WebDAV/SMB/FTP
  * folders as a horizontal row of compact cards, most recently pinned first.
- * Cards render statically from the pin record; tapping opens the network
- * browser at the folder (connection errors surface there); long-press unpins.
+ * Cards render from the pin record: tap continues the folder's playlist,
+ * long-press unpins it. Pin/unpin for the folder you are IN lives in the
+ * browser's top bar (push-pin icon).
  */
 @Composable
 private fun PinnedNetworkFoldersSection(
