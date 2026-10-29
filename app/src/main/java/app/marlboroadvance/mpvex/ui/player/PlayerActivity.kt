@@ -3153,12 +3153,14 @@ savePlaybackStateJob?.let { job ->
 
     // Track the current network identity so history, progress and subtitles
     // follow the playlist item actually playing (not the launch intent's).
-    // A local item clears it.
+    // Proxy URLs were already resolved to connection + path inside
+    // getMediaIdentifierFromUri — don't clear them; only a non-network
+    // (local) item clears the identity.
     val networkRef = NetworkRecent.parse(uri.toString())
     if (networkRef != null) {
       currentNetworkConnectionId = networkRef.connectionId
       currentNetworkFilePath = networkRef.path
-    } else {
+    } else if (uri.host != "127.0.0.1" && uri.host != "localhost") {
       currentNetworkConnectionId = -1L
       currentNetworkFilePath = null
     }
