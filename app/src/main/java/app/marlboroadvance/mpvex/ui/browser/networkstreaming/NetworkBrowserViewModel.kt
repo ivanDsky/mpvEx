@@ -91,7 +91,9 @@ class NetworkBrowserViewModel(
     if (file.path in firstFrameRequested) return
     firstFrameRequested += file.path
     viewModelScope.launch(Dispatchers.IO) {
-      playbackStarter.extractFrameById(connectionId, file)
+      playbackStarter.extractFrameById(connectionId, file)?.let { bitmap ->
+        thumbnailCache.put(connectionId, file.path, bitmap)
+      }
     }
   }
 

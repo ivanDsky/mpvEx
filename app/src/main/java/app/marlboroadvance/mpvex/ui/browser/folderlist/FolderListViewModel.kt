@@ -314,7 +314,9 @@ class FolderListViewModel(
       val target = videos[index]
       val cache = app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache.get(getApplication())
       if (cache.cached(folder.connectionId, target.path) == null) {
-        playbackStarter.extractFrameById(folder.connectionId, target)
+        playbackStarter.extractFrameById(folder.connectionId, target)?.let { bitmap ->
+          cache.put(folder.connectionId, target.path, bitmap)
+        }
       }
     }
   }
