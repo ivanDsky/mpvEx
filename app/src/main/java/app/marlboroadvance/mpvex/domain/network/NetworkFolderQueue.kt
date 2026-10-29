@@ -62,16 +62,17 @@ object NetworkFolderQueue {
     val progress =
       siblings.mapIndexed { index, file ->
         val state = states[playbackKeyOf(file)]
+        // Saves land on a 5s tick, so "watched to the end" can leave a few
+        // seconds on the clock — count that as finished.
         Progress(
           index = index,
           started = state != null && (state.lastPosition > 0 || state.hasBeenWatched),
-          finished = state != null && state.hasBeenWatched && state.timeRemaining <= 0,
+          finished = state != null && state.hasBeenWatched && state.timeRemaining <= 5,
         )
       }
 
     // The latest episode with watch history is where the user left off:
     // still in progress -> resume it; finished -> continue with the next.
-    progress.forEach { println("DIAG idx=${it.index} started=${it.started} finished=${it.finished}") }
     val lastStarted = progress.lastOrNull { it.started } ?: return 0
     return if (!lastStarted.finished) {
       lastStarted.index
@@ -99,9 +100,16 @@ object NetworkFolderQueue {
   ): Int {
     fun normalize(name: String) = name.substringBeforeLast('.', name).lowercase()
 
-    recentNames.forEach { recent ->
+    for (recent in recentNames) {
       val match = siblings.indexOfFirst { normalize(it.name) == normalize(recent) }
-      if (match != -1) return match
+      if (match != -1) {
+        // Recency wins only while that episode is still in progress; once
+        // it is finished, the watch frontier moves on to the next episode.
+        val state = states[playbackKeyOf(siblings[match])]
+        val finished = state != null && state.hasBeenWatched && state.timeRemaining <= 5
+        if (!finished) return match
+        break
+      }
     }
     return continueIndex(siblings, states, playbackKeyOf)
   }

@@ -228,7 +228,6 @@ class FolderListViewModel(
                   ?.let { NetworkFolderQueue.orderedVideos(it) }
               if (listing == null) return@launch // unreachable: retried on the next pins emission
               _pinListings.update { it + (folder.progressKey() to listing) }
-              extractFirstFrameIfNeeded(folder, listing)
             }
           }
       }
@@ -297,27 +296,32 @@ class FolderListViewModel(
       .map { it.fileName }
   }
 
-  /**
-   * A continue target with no stored frame was never played on this device:
-   * extract its first frame once; the put() broadcast updates every observer.
-   */
-  private fun extractFirstFrameIfNeeded(
-    folder: PinnedNetworkFolder,
-    videos: List<app.marlboroadvance.mpvex.domain.network.NetworkFile>,
-  ) {
-    if (videos.isEmpty()) return
-    viewModelScope.launch(Dispatchers.IO) {
-      val index =
-        NetworkFolderQueue.continueTarget(videos, networkStates.value, { file ->
-          app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(folder.connectionId, file.path)
-        }, folderScopedRecentNames(folder))
-      val target = videos[index]
-      val cache = app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache.get(getApplication())
-      if (cache.cached(folder.connectionId, target.path) == null) {
-        playbackStarter.extractFrameById(folder.connectionId, target)?.let { bitmap ->
-          cache.put(folder.connectionId, target.path, bitmap)
+  /** Continue-target paths already requested this session (no retry storms). */
+  private val requestedTargetFrames = mutableSetOf<String>()
+
+  init {
+    // As continue targets advance (episode finished -> next), fetch a frame
+    // for any target that has none; put() broadcasts it to the card.
+    viewModelScope.launch {
+      combine(_pinnedNetworkFolders, pinnedProgress) { folders, progress -> folders to progress }
+        .collect { (folders, progress) ->
+          folders.forEach { folder ->
+            val key = folder.progressKey()
+            val path = progress[key]?.currentPath ?: return@forEach
+            val frameKey = "$key|$path"
+            if (frameKey in requestedTargetFrames) return@forEach
+            requestedTargetFrames += frameKey
+            viewModelScope.launch(Dispatchers.IO) {
+              val cache = app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkThumbnailCache.get(getApplication())
+              if (cache.cached(folder.connectionId, path) != null) return@launch
+              val connection = networkRepository.getConnectionById(folder.connectionId) ?: return@launch
+              val file = _pinListings.value[key]?.firstOrNull { it.path == path } ?: return@launch
+              playbackStarter.extractFrameById(folder.connectionId, file)?.let { bitmap ->
+                cache.put(folder.connectionId, path, bitmap)
+              }
+            }
+          }
         }
-      }
     }
   }
 

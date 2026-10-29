@@ -22,19 +22,22 @@ class NetworkFolderQueueTest {
   private fun episode(name: String) =
     NetworkFile(name = name, path = "Show/$name", size = 1, isDirectory = false, mimeType = "video/mp4")
 
-  private fun watched(name: String, finished: Boolean) =
-    app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity(
-      mediaTitle = "network_1_${"Show/$name".hashCode()}",
-      lastPosition = if (finished) 1800 else 600,
-      playbackSpeed = 1.0,
-      sid = 0,
-      subDelay = 0,
-      subSpeed = 1.0,
-      aid = 0,
-      audioDelay = 0,
-      timeRemaining = if (finished) 0 else 1200,
-      hasBeenWatched = true,
-    )
+  private fun watched(
+    name: String,
+    finished: Boolean,
+    remaining: Int = if (finished) 0 else 1200,
+  ) = app.marlboroadvance.mpvex.database.entities.PlaybackStateEntity(
+    mediaTitle = "network_1_${"Show/$name".hashCode()}",
+    lastPosition = if (finished) 1800 else 600,
+    playbackSpeed = 1.0,
+    sid = 0,
+    subDelay = 0,
+    subSpeed = 1.0,
+    aid = 0,
+    audioDelay = 0,
+    timeRemaining = remaining,
+    hasBeenWatched = true,
+  )
 
   // ---- ordering (sortNetworkFiles) ----
 
@@ -175,6 +178,37 @@ class NetworkFolderQueueTest {
     val index = NetworkFolderQueue.continueTarget(siblings, states, keys, recentNames)
 
     assertEquals(1, index) // Episode 2 — not the natural-order last (3)
+  }
+
+  @Test
+  fun `continue target advances past the most recent episode once it is finished`() {
+    val siblings = listOf(episode("Episode 1"), episode("Episode 2"), episode("Episode 3"))
+    val states =
+      mapOf(
+        "network_1_${"Show/Episode 1".hashCode()}" to watched("Episode 1", finished = true),
+        "network_1_${"Show/Episode 2".hashCode()}" to watched("Episode 2", finished = true),
+      )
+    val keys: (NetworkFile) -> String = { app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(1, it.path) }
+    val recentNames = listOf("Episode 2") // newest and finished
+
+    val index = NetworkFolderQueue.continueTarget(siblings, states, keys, recentNames)
+
+    assertEquals(2, index) // Episode 3 — the frontier, not the finished recent
+  }
+
+  @Test
+  fun `an episode with seconds left on the clock counts as finished`() {
+    val siblings = listOf(episode("Episode 1"), episode("Episode 2"), episode("Episode 3"))
+    val states =
+      mapOf(
+        "network_1_${"Show/Episode 2".hashCode()}" to watched("Episode 2", finished = true, remaining = 3),
+      )
+    val keys: (NetworkFile) -> String = { app.marlboroadvance.mpvex.domain.network.NetworkRecent.playbackKey(1, it.path) }
+    val recentNames = listOf("Episode 2")
+
+    val index = NetworkFolderQueue.continueTarget(siblings, states, keys, recentNames)
+
+    assertEquals(2, index) // Episode 3 — watched-to-the-last-second moves on
   }
 
   @Test
